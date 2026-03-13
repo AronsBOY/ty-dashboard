@@ -20,6 +20,7 @@ const STATUSES = ['已完工', '施工中', '規劃中', '暫緩'];
 
 // --- 系統更新日誌資料 ---
 const CHANGELOG = [
+  { date: '2026-03-13', version: 'v1.9.0', notes: ['學校總表支援自訂欄位寬度拖曳', '學校總表開啟全域垂直/水平卷軸', '學校總表新增進場與完工日期', '大幅擴充排程口袋名單視窗寬度'] },
   { date: '2026-03-13', version: 'v1.8.0', notes: ['優化 AI 提示詞架構，餵入各行政區詳細統計', '新增 115年度排程達標率與口袋名單看板', '拆分 A4 列印模組 [1] 與 [1-1]'] },
   { date: '2026-03-13', version: 'v1.7.1', notes: ['修復 Gemini API 權限錯誤，全面升級至最新 gemini-2.5-flash 模型'] },
   { date: '2026-03-13', version: 'v1.7.0', notes: ['新增 A4 自訂排版列印模組：支援 8 大區塊自由勾選組合匯出'] },
@@ -63,6 +64,18 @@ const determineLevel = (name) => {
   if (name.includes('大學')) return '大學';
   return '國小';
 };
+
+// --- 擴展表頭自訂欄寬元件 (無套件依賴) ---
+const ResizableTh = ({ children, minW = "100px", className = "" }) => (
+    <th className="border border-gray-200 bg-gray-100 text-gray-700 sticky top-0 z-10 shadow-sm print-bg-gray-100 p-0 align-top">
+        <div 
+            className={`p-3 resize-x overflow-hidden whitespace-nowrap font-bold hover:bg-gray-200 transition-colors ${className}`} 
+            style={{ minWidth: minW, maxWidth: '600px' }}
+        >
+            {children}
+        </div>
+    </th>
+);
 
 // --- 由文本解析匯入之完整資料庫 (共159筆) ---
 const INITIAL_DATA = [
@@ -659,14 +672,19 @@ ${districtContext}
       const centralProjects = projects.filter(p => p.budgetSource1 === '中央補助');
       const filtered = filterDist === 'All' ? centralProjects : centralProjects.filter(p => p.district === filterDist);
       return (
-        <div className="mb-6">
-            <h2 className="text-lg font-bold mb-3 border-l-4 pl-2" style={{ borderColor: COLORS.techBlue }}>[5] 中央補助專案列表 ({filterDist === 'All' ? '全市' : filterDist})</h2>
-            <div className="overflow-x-auto border rounded-lg print-table-wrapper">
+        <div className="mb-6 flex-1 flex flex-col min-h-0">
+            <h2 className="text-lg font-bold mb-3 border-l-4 pl-2 flex-shrink-0" style={{ borderColor: COLORS.techBlue }}>[5] 中央補助專案列表 ({filterDist === 'All' ? '全市' : filterDist})</h2>
+            <div className="flex-1 overflow-auto border rounded-lg bg-white print-table-wrapper">
                 <table className="w-full text-sm text-left border-collapse min-w-[1000px] print-table">
-                    <thead className="bg-gray-100 text-gray-700 uppercase print-bg-gray-100">
+                    <thead className="bg-gray-100 text-gray-700 uppercase print-bg-gray-100 sticky top-0 z-10 shadow-sm">
                     <tr>
-                        <th className="p-3 border text-center text-red-600 font-bold w-20 screen-only">不核定</th>
-                        <th className="p-3 border">行政區</th><th className="p-3 border">計畫/學校名稱</th><th className="p-3 border">補助單位</th><th className="p-3 border text-right">經費(萬)</th><th className="p-3 border text-center">進度</th><th className="p-3 border">亮點指標</th>
+                        <ResizableTh minW="80px" className="text-center text-red-600 screen-only">不核定</ResizableTh>
+                        <ResizableTh minW="100px" className="text-center">行政區</ResizableTh>
+                        <ResizableTh minW="180px">計畫/學校名稱</ResizableTh>
+                        <ResizableTh minW="100px" className="text-center">補助單位</ResizableTh>
+                        <ResizableTh minW="120px" className="text-right">經費(萬)</ResizableTh>
+                        <ResizableTh minW="100px" className="text-center">進度</ResizableTh>
+                        <ResizableTh minW="200px">亮點指標</ResizableTh>
                     </tr>
                     </thead>
                     <tbody>
@@ -699,27 +717,44 @@ ${districtContext}
       </div>
   );
 
-  // [7] 學校總表清單
+  // [7] 學校總表清單 (支援雙向捲軸與欄位自適應縮放)
   const Block7_SchoolTable = () => (
-      <div className="mb-6">
-        <h2 className="text-lg font-bold mb-3 border-l-4 pl-2" style={{ borderColor: COLORS.warmYellow }}>[7] 學校總表清單明細 (顯示 {displayProjects.length} 筆)</h2>
-        <div className="overflow-x-auto border rounded print-table-wrapper bg-white">
-            <table className="w-full text-sm text-left relative min-w-[1000px] print-table">
-                <thead className="bg-gray-100 text-gray-700 uppercase text-xs print-bg-gray-100">
+      <div className="flex-1 flex flex-col min-h-0 mb-2">
+        <h2 className="text-lg font-bold mb-3 border-l-4 pl-2 flex-shrink-0" style={{ borderColor: COLORS.warmYellow }}>[7] 學校總表清單明細 (顯示 {displayProjects.length} 筆)</h2>
+        <div className="flex-1 overflow-auto border rounded print-table-wrapper bg-white shadow-inner">
+            <table className="w-full text-sm text-left relative print-table" style={{ borderCollapse: 'separate', borderSpacing: 0 }}>
+                <thead className="text-xs">
                     <tr>
-                        <th className="p-3 border w-16 text-center">項次</th><th className="p-3 border w-20 text-center screen-only">排除</th><th className="p-3 border text-center">行政區</th><th className="p-3 border text-center">層級</th><th className="p-3 border">案名(學校)</th><th className="p-3 border text-center">狀態</th><th className="p-3 border text-center">預算大項</th><th className="p-3 border text-center">細項</th><th className="p-3 border text-right">經費(萬)</th><th className="p-3 border text-center">機關</th>
+                        <ResizableTh minW="60px" className="text-center text-pink-600">項次</ResizableTh>
+                        <ResizableTh minW="60px" className="text-center screen-only">排除</ResizableTh>
+                        <ResizableTh minW="100px" className="text-center">行政區</ResizableTh>
+                        <ResizableTh minW="80px" className="text-center">層級</ResizableTh>
+                        <ResizableTh minW="180px">案名(學校)</ResizableTh>
+                        <ResizableTh minW="90px" className="text-center">狀態</ResizableTh>
+                        <ResizableTh minW="120px" className="text-center text-blue-600">進場日期</ResizableTh>
+                        <ResizableTh minW="120px" className="text-center text-green-600">完工日期</ResizableTh>
+                        <ResizableTh minW="100px" className="text-center">預算大項</ResizableTh>
+                        <ResizableTh minW="120px" className="text-center">細項</ResizableTh>
+                        <ResizableTh minW="100px" className="text-right">經費(萬)</ResizableTh>
+                        <ResizableTh minW="120px" className="text-center">機關</ResizableTh>
                     </tr>
                 </thead>
                 <tbody className="divide-y">
                     {displayProjects.map(p => (
                         <tr key={p.id} className={`hover:bg-pink-50 transition-colors print-avoid-break ${p.isExcluded ? 'bg-gray-50 opacity-50 print-hide' : ''}`}>
-                            <td className="p-2 text-center font-mono font-bold text-gray-500 bg-gray-50 print-bg-gray-50">{p.itemNumber}</td>
-                            <td className="p-2 text-center screen-only" onClick={() => handleToggleExclude(p.id)}><div className="flex items-center justify-center cursor-pointer">{p.isExcluded ? <CheckSquare className="w-5 h-5 text-red-500"/> : <Square className="w-5 h-5 text-gray-300"/>}</div></td>
-                            <td className="p-2 text-center">{p.district}</td><td className="p-2 text-xs text-gray-500 text-center">{p.level}</td>
-                            <td className="p-2 font-medium text-blue-600 screen-only cursor-pointer hover:underline" onClick={() => setSelectedProject(p)}>{p.name} {isDuplicateName(p.name) && <span className="ml-1 text-[10px] bg-red-100 text-red-600 px-1 rounded inline-block">重複案</span>}</td>
-                            <td className="p-2 font-medium text-blue-800 print-only hidden">{p.name} {isDuplicateName(p.name) && <span className="ml-1 text-[10px] text-red-600">(重複案)</span>}</td>
-                            <td className="p-2 text-center"><span className={p.status === '已完工' ? 'text-green-600 font-bold bg-green-50 px-2 py-1 rounded print-bg-green-50' : p.status === '暫緩' ? 'text-gray-400' : ''}>{p.status}</span></td>
-                            <td className="p-2 text-center">{p.budgetSource1}</td><td className="p-2 text-xs text-gray-500 text-center">{p.budgetSource2}</td><td className="p-2 text-right font-mono font-bold text-gray-700">{p.budgetAmount.toLocaleString()}</td><td className="p-2 text-xs text-gray-600 text-center">{p.agency}</td>
+                            <td className="p-2 border-b text-center font-mono font-bold text-gray-500 bg-gray-50 print-bg-gray-50">{p.itemNumber}</td>
+                            <td className="p-2 border-b text-center screen-only" onClick={() => handleToggleExclude(p.id)}><div className="flex items-center justify-center cursor-pointer">{p.isExcluded ? <CheckSquare className="w-5 h-5 text-red-500"/> : <Square className="w-5 h-5 text-gray-300"/>}</div></td>
+                            <td className="p-2 border-b text-center">{p.district}</td>
+                            <td className="p-2 border-b text-xs text-gray-500 text-center">{p.level}</td>
+                            <td className="p-2 border-b font-medium text-blue-600 screen-only cursor-pointer hover:underline" onClick={() => setSelectedProject(p)}>{p.name} {isDuplicateName(p.name) && <span className="ml-1 text-[10px] bg-red-100 text-red-600 px-1 rounded inline-block">重複案</span>}</td>
+                            <td className="p-2 border-b font-medium text-blue-800 print-only hidden">{p.name} {isDuplicateName(p.name) && <span className="ml-1 text-[10px] text-red-600">(重複案)</span>}</td>
+                            <td className="p-2 border-b text-center"><span className={p.status === '已完工' ? 'text-green-600 font-bold bg-green-50 px-2 py-1 rounded print-bg-green-50' : p.status === '暫緩' ? 'text-gray-400' : ''}>{p.status}</span></td>
+                            <td className="p-2 border-b text-center text-gray-600 font-mono tracking-tighter">{p.startDate || '-'}</td>
+                            <td className="p-2 border-b text-center text-gray-600 font-mono tracking-tighter">{p.endDate || '-'}</td>
+                            <td className="p-2 border-b text-center">{p.budgetSource1}</td>
+                            <td className="p-2 border-b text-xs text-gray-500 text-center">{p.budgetSource2}</td>
+                            <td className="p-2 border-b text-right font-mono font-bold text-gray-700">{p.budgetAmount.toLocaleString()}</td>
+                            <td className="p-2 border-b text-xs text-gray-600 text-center">{p.agency}</td>
                         </tr>
                     ))}
                 </tbody>
@@ -742,7 +777,6 @@ ${districtContext}
         <div className="mb-6 print-avoid-break">
             <h2 className="text-lg font-bold mb-3 border-l-4 pl-2" style={{ borderColor: COLORS.ecoGreen }}>[8] 115年度施工排程看板</h2>
             
-            {/* 新增：排程數據戰情卡片 */}
             <div className="flex space-x-4 mb-4">
                 <div className="flex-1 bg-white border border-gray-200 rounded-lg p-4 shadow-sm print-border">
                     <div className="text-sm text-gray-500 font-bold mb-1">本市實際已完工 / 120所達標率</div>
@@ -786,7 +820,7 @@ ${districtContext}
   }
 
   // ==========================================
-  // 分頁畫面 Render 函數 (包含上方模組)
+  // 分頁畫面 Render 函數
   // ==========================================
 
   const renderDashboard = () => (
@@ -799,8 +833,8 @@ ${districtContext}
   );
 
   const renderCentral = () => (
-      <div className="bg-white p-6 rounded-xl shadow-sm animate-fade-in pb-20">
-        <div className="flex justify-between items-center mb-6 border-b pb-4">
+      <div className="bg-white p-6 rounded-xl shadow-sm animate-fade-in h-full flex flex-col">
+        <div className="flex justify-between items-center mb-6 border-b pb-4 flex-shrink-0">
             <div><h2 className="text-xl font-bold flex items-center" style={{ color: COLORS.techBlue }}><Building2 className="w-6 h-6 mr-2"/> 中央補助專案管理</h2><p className="text-sm text-gray-500 mt-1">勾選「不核定」將自動自上方統計與預算中扣除。</p></div>
             <select className="border-2 border-blue-200 p-2 rounded-lg font-bold outline-none focus:ring-2 focus:ring-blue-300" value={filterDist} onChange={e => setFilterDist(e.target.value)}><option value="All">所有行政區篩選</option>{DISTRICTS.map(d => <option key={d} value={d}>{d}</option>)}</select>
         </div>
@@ -810,7 +844,7 @@ ${districtContext}
   );
 
   const renderSchools = () => (
-      <div className="bg-white p-6 rounded-xl shadow-sm animate-fade-in flex flex-col h-[85vh]">
+      <div className="bg-white p-6 rounded-xl shadow-sm animate-fade-in h-full flex flex-col">
         <div className="flex justify-between items-center mb-4 flex-shrink-0">
             <h2 className="text-xl font-bold text-gray-800 flex items-center"><Search className="w-6 h-6 mr-2"/> 學校總表資料庫 (點擊名稱可編輯)</h2>
             <div className="flex items-center space-x-4">
@@ -819,9 +853,7 @@ ${districtContext}
             </div>
         </div>
         <Block6_SchoolStats />
-        <div className="flex-1 overflow-hidden flex flex-col">
-           <Block7_SchoolTable />
-        </div>
+        <Block7_SchoolTable />
 
         {selectedProject && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 animate-fade-in screen-only">
@@ -835,6 +867,8 @@ ${districtContext}
                              <div><label className="block text-xs text-gray-500 mb-1">層級</label><select className="w-full border p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none" value={selectedProject.level} onChange={e => handleUpdateProject(selectedProject.id, 'level', e.target.value)}>{LEVELS.map(l => <option key={l} value={l}>{l}</option>)}</select></div>
                              <div><label className="block text-xs text-gray-500 mb-1">執行狀態</label><select className="w-full border p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none font-bold text-blue-700" value={selectedProject.status} onChange={e => handleUpdateProject(selectedProject.id, 'status', e.target.value)}>{STATUSES.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
                             <div><label className="block text-xs text-gray-500 mb-1">機關</label><input type="text" className="w-full border p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none" value={selectedProject.agency} onChange={e => handleUpdateProject(selectedProject.id, 'agency', e.target.value)} /></div>
+                            <div><label className="block text-xs text-gray-500 mb-1">進場日期</label><input type="text" className="w-full border p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none" placeholder="YYYY/MM/DD" value={selectedProject.startDate} onChange={e => handleUpdateProject(selectedProject.id, 'startDate', e.target.value)} /></div>
+                            <div><label className="block text-xs text-gray-500 mb-1">完工日期</label><input type="text" className="w-full border p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none" placeholder="YYYY/MM/DD" value={selectedProject.endDate} onChange={e => handleUpdateProject(selectedProject.id, 'endDate', e.target.value)} /></div>
                         </div>
                         <div className="border-t pt-4 grid grid-cols-2 gap-4">
                             <div>
@@ -861,32 +895,32 @@ ${districtContext}
 
   const renderSchedule = () => {
      const months = Array.from({length: 12}, (_, i) => i + 1);
-     // 待排程清單 (排除已排程、已完工、暫緩)
-     const unscheduledProjects = projects.filter(p => !p.scheduleMonth && p.status !== '已完工' && p.status !== '暫緩');
+     const unscheduledProjects = projects.filter(p => !p.scheduleMonth && p.status !== '已完工' && p.status !== '暫緩' && !p.isExcluded);
 
      return (
-        <div className="bg-white p-6 rounded-xl shadow-sm h-full flex flex-col animate-fade-in pb-20">
+        <div className="bg-white p-6 rounded-xl shadow-sm h-full flex flex-col animate-fade-in">
             <Block8_Schedule />
-            <div className="flex-1 overflow-auto border rounded bg-gray-50 flex mt-4">
-                <div className="w-80 bg-white border-r p-4 flex-shrink-0 overflow-y-auto shadow-inner">
-                    <h3 className="font-bold text-gray-600 mb-3 border-b pb-2 flex items-center justify-between">
+            <div className="flex-1 overflow-hidden border rounded bg-gray-50 flex mt-4">
+                <div className="w-1/3 min-w-[350px] max-w-[450px] bg-white border-r p-4 flex flex-col shadow-inner">
+                    <h3 className="font-bold text-gray-600 mb-3 border-b pb-2 flex items-center justify-between flex-shrink-0">
                         <span>待排程清單</span>
                         <span className="bg-teal-100 text-teal-800 text-xs px-2 py-1 rounded-full">{unscheduledProjects.length} 案</span>
                     </h3>
-                    <div className="space-y-2">
+                    <div className="space-y-2 overflow-y-auto flex-1 pr-2 custom-scrollbar">
                         {unscheduledProjects.map(p => (
-                            <div key={p.id} className="p-2 border rounded bg-gray-50 text-sm hover:shadow-md transition border-l-4 border-l-teal-400">
-                                <div className="font-bold text-gray-800">{p.name} <span className="text-[10px] text-gray-400 font-normal bg-gray-200 px-1 rounded">{p.status}</span></div>
-                                <div className="text-xs text-gray-500 flex justify-between mt-2 items-center">
-                                    <span>{p.district}</span>
-                                    <select className="border border-teal-200 rounded bg-white p-1 text-teal-700 font-bold focus:ring-2 focus:ring-teal-500 outline-none" value="" onChange={(e) => handleUpdateProject(p.id, 'scheduleMonth', e.target.value)}><option value="">指派進場月份</option>{months.map(m => <option key={m} value={m}>{m}月</option>)}</select>
+                            <div key={p.id} className="p-3 border rounded-lg bg-gray-50 text-sm hover:shadow-md transition border-l-4 border-l-teal-400">
+                                <div className="font-bold text-gray-800 text-base">{p.name} <span className="text-xs text-gray-500 font-normal bg-gray-200 px-1.5 py-0.5 rounded ml-1">{p.status}</span></div>
+                                <div className="text-sm text-gray-500 flex justify-between mt-3 items-center">
+                                    <span className="flex items-center"><MapPin className="w-3 h-3 mr-1"/> {p.district}</span>
+                                    <select className="border border-teal-300 rounded bg-white p-1.5 text-teal-700 font-bold focus:ring-2 focus:ring-teal-500 outline-none shadow-sm cursor-pointer" value="" onChange={(e) => handleUpdateProject(p.id, 'scheduleMonth', e.target.value)}><option value="">指派進場月份 ▾</option>{months.map(m => <option key={m} value={m}>{m}月排程</option>)}</select>
                                 </div>
                             </div>
                         ))}
                         {unscheduledProjects.length === 0 && <div className="text-center text-gray-400 py-10">所有案件皆已排程完畢</div>}
                     </div>
                 </div>
-                <div className="flex-1 bg-gray-100/50 flex items-center justify-center text-gray-400 text-sm">
+                <div className="flex-1 bg-gray-100/50 flex flex-col items-center justify-center text-gray-400 text-sm">
+                    <Calendar className="w-16 h-16 text-gray-300 mb-4" />
                     請在左側清單為案件指派月份，資料將自動更新至上方看板。
                 </div>
             </div>
@@ -907,7 +941,7 @@ ${districtContext}
 
         <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-yellow-400">
             <h2 className="text-xl font-bold mb-4 flex items-center text-gray-800"><History className="mr-2 text-yellow-500"/> 系統更新日誌 (Changelog)</h2>
-            <div className="space-y-4 max-h-60 overflow-y-auto pr-2">
+            <div className="space-y-4 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
                 {CHANGELOG.map((log, idx) => (
                     <div key={idx} className="border-b border-gray-100 pb-3 last:border-0">
                         <div className="flex items-center space-x-3 mb-1"><span className="font-mono font-bold text-pink-600 bg-pink-50 px-2 py-0.5 rounded text-xs">{log.version}</span><span className="text-sm text-gray-500 flex items-center"><Clock className="w-3 h-3 mr-1"/> {log.date}</span></div>
@@ -935,10 +969,7 @@ ${districtContext}
 
   return (
     <>
-    {/* ========================================== */}
-    {/* 【正常螢幕操作介面】 (列印時會完全隱藏) */}
-    {/* ========================================== */}
-    <div className="flex h-screen bg-gray-100 font-sans text-gray-800 relative screen-only">
+    <div className="flex h-screen bg-gray-100 font-sans text-gray-800 relative screen-only overflow-hidden">
       <aside className="w-64 bg-gray-900 text-white flex flex-col shadow-xl z-20 flex-shrink-0">
         <div className="p-6 border-b border-gray-800 flex items-center justify-between">
             <div className="flex items-center">
@@ -946,7 +977,7 @@ ${districtContext}
                 <div><h1 className="text-lg font-bold tracking-wider">桃園市</h1><p className="text-xs text-gray-400">通學廊道戰情儀錶板</p></div>
             </div>
         </div>
-        <nav className="flex-1 p-4 space-y-2">
+        <nav className="flex-1 p-4 space-y-2 overflow-y-auto custom-scrollbar">
             {[
                 { id: 'dashboard', icon: LayoutDashboard, label: '戰情儀錶板' },
                 { id: 'central', icon: Building2, label: '中央補助案' },
@@ -976,12 +1007,9 @@ ${districtContext}
             </div>
             <div className="flex items-center space-x-4">
                 {isDirty && <span className="flex items-center text-sm text-yellow-600 font-bold animate-pulse"><AlertCircle className="w-4 h-4 mr-1"/> 有未儲存的變更</span>}
-                
-                {/* 獨立的 A4 畫面截圖/列印按鈕：開啟模組對話框 */}
                 <button onClick={openPrintConfig} className="flex items-center bg-gray-800 text-white px-3 py-1.5 rounded-lg shadow hover:bg-gray-700 transition-colors text-sm font-bold shadow-gray-500/50">
                     <Printer className="w-4 h-4 mr-2"/> 匯出 A4 視覺報表
                 </button>
-
                 <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold border border-blue-200 shadow-inner">工</div>
             </div>
         </header>
@@ -995,18 +1023,18 @@ ${districtContext}
         </div>
       </main>
 
-      {/* --- AI 戰情特助 (Floating Widget) --- */}
+      {/* --- AI 戰情特助 --- */}
       <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end">
         {isAIOpen && (
-            <div className="w-80 h-96 bg-white rounded-xl shadow-2xl border border-pink-100 mb-4 flex flex-col overflow-hidden animate-fade-in">
+            <div className="w-80 h-[450px] bg-white rounded-xl shadow-2xl border border-pink-100 mb-4 flex flex-col overflow-hidden animate-fade-in">
                 <div className="bg-gradient-to-r from-pink-500 to-purple-600 p-3 text-white flex justify-between items-center shadow-md">
                     <div className="flex items-center font-bold"><MessageCircle className="w-5 h-5 mr-2" /> AI 戰情特助</div>
                     <button onClick={() => setIsAIOpen(false)} className="hover:text-pink-200 transition-colors"><X className="w-5 h-5" /></button>
                 </div>
-                <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50 text-sm">
+                <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50 text-sm custom-scrollbar">
                     {aiMessages.map((msg, idx) => (
                         <div key={idx} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                            <div className={`px-4 py-2 rounded-2xl max-w-[85%] whitespace-pre-wrap ${msg.role === 'user' ? 'bg-pink-500 text-white rounded-tr-none shadow-sm' : 'bg-white border border-gray-200 text-gray-700 rounded-tl-none shadow-sm'}`}>{msg.content}</div>
+                            <div className={`px-4 py-2 rounded-2xl max-w-[85%] whitespace-pre-wrap ${msg.role === 'user' ? 'bg-pink-500 text-white rounded-tr-none shadow-sm' : 'bg-white border border-gray-200 text-gray-700 rounded-tl-none shadow-sm leading-relaxed'}`}>{msg.content}</div>
                         </div>
                     ))}
                     {isAILoading && (<div className="flex items-start"><div className="px-4 py-2 rounded-2xl bg-white border border-gray-200 text-gray-500 rounded-tl-none flex items-center space-x-1"><div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div><div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div><div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></div></div></div>)}
@@ -1072,16 +1100,14 @@ ${districtContext}
     </div>
 
     {/* ========================================== */}
-    {/* 【列印專用版面區塊】 (平時隱藏，列印時才會被瀏覽器抓取) */}
+    {/* 【列印專用版面區塊】 */}
     {/* ========================================== */}
     <div className="print-only text-black font-sans bg-white print-content-reset">
-        {/* 列印表頭 */}
         <div className="text-center pb-4 mb-6 border-b-2 border-gray-800">
             <h1 className="text-3xl font-black tracking-widest text-gray-900 mb-2">桃園市通學廊道戰情報告</h1>
             <p className="text-sm text-gray-600 font-bold">資料統計日期：{currentDate}</p>
         </div>
 
-        {/* 依據勾選狀態，依序渲染模組 */}
         {printSelection.b1 && <Block1_Overview />}
         {printSelection.b1_1 && <Block1_1_ActualStats />}
         {printSelection.b2 && <Block2_PieCharts />}
@@ -1092,31 +1118,35 @@ ${districtContext}
         {printSelection.b7 && <Block7_SchoolTable />}
         {printSelection.b8 && <Block8_Schedule />}
 
-        {/* 若什麼都沒勾選的防呆提示 */}
         {!Object.values(printSelection).some(Boolean) && (
             <div className="text-center text-gray-400 py-20 border-2 border-dashed border-gray-200">
                 您沒有勾選任何區塊，請返回網頁重新設定。
             </div>
         )}
         
-        {/* 列印表尾 */}
         <div className="mt-8 pt-4 border-t text-right text-xs text-gray-400 font-mono">
             Generated by Taoyuan Corridor Dashboard System
         </div>
     </div>
 
     {/* ========================================== */}
-    {/* 全局 CSS (包含列印覆寫規則) */}
+    {/* 全局 CSS (包含列印覆寫規則與自訂滾動條) */}
     {/* ========================================== */}
     <style dangerouslySetInnerHTML={{__html: `
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         .animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
         
         /* 捲動條美化 */
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: #a8a8a8; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        /* 針對整個畫面的隱藏卷軸 */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
         /* 平時螢幕顯示邏輯 */
         @media screen {
@@ -1145,9 +1175,10 @@ ${districtContext}
             
             /* 表格列印優化 (去除 overflow 防止表格被截斷) */
             .print-table-wrapper { overflow: visible !important; border: none !important; box-shadow: none !important; }
-            .print-table { border-collapse: collapse !important; width: 100% !important; page-break-inside: auto !important; }
+            .print-table { border-collapse: collapse !important; width: 100% !important; page-break-inside: auto !important; border-spacing: 0 !important;}
             .print-table tr { page-break-inside: avoid !important; page-break-after: auto !important; }
-            .print-table th, .print-table td { border: 1px solid #4a5568 !important; padding: 6px !important; color: #000 !important; }
+            .print-table th, .print-table td { border: 1px solid #4a5568 !important; padding: 6px !important; color: #000 !important; border-bottom: none !important; }
+            .print-table th > div { resize: none !important; overflow: visible !important; white-space: normal !important; min-width: 0 !important;}
             
             /* 強制列印排版網格 */
             .print-grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
@@ -1195,6 +1226,7 @@ ${districtContext}
             .print-text-yellow-100 { color: #fef9c3 !important; }
             
             .print-border-l-primary { border-left-color: #E83888 !important; }
+            .print-border-l-gray-800 { border-left-color: #1F2937 !important; }
         }
       `}} />
     </>
