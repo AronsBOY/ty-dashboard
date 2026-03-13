@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
-import { LayoutDashboard, Building2, Calendar, Database, Download, Upload, Save, MapPin, Image as ImageIcon, Search, AlertCircle, Edit, CheckSquare, Square, Check, MessageCircle, X, Send, Filter, FileText, Clock, History, Key, Printer, Settings } from 'lucide-react';
+import { LayoutDashboard, Building2, Calendar, Database, Download, Upload, Save, MapPin, Image as ImageIcon, Search, AlertCircle, Edit, CheckSquare, Square, Check, MessageCircle, X, Send, Filter, FileText, Clock, History, Key, Printer, Settings, Plus, Paperclip, FileOutput } from 'lucide-react';
 
 // --- 桃園市品牌色系 ---
 const COLORS = {
@@ -20,17 +20,12 @@ const STATUSES = ['已完工', '施工中', '規劃中', '暫緩'];
 
 // --- 系統更新日誌資料 ---
 const CHANGELOG = [
-  { date: '2026-03-13', version: 'v1.9.0', notes: ['學校總表支援自訂欄位寬度拖曳', '學校總表開啟全域垂直/水平卷軸', '學校總表新增進場與完工日期', '大幅擴充排程口袋名單視窗寬度'] },
-  { date: '2026-03-13', version: 'v1.8.0', notes: ['優化 AI 提示詞架構，餵入各行政區詳細統計', '新增 115年度排程達標率與口袋名單看板', '拆分 A4 列印模組 [1] 與 [1-1]'] },
+  { date: '2026-03-13', version: 'v2.0.0', notes: ['AI特助升級：支援 TXT 參考資料上傳 (RAG架構) 與一鍵產生新聞稿', '學校總表：新增案件功能實作', '排程看板：大幅擴充口袋名單視窗寬度與視覺體驗'] },
+  { date: '2026-03-13', version: 'v1.9.0', notes: ['學校總表支援自訂欄位寬度拖曳', '學校總表開啟全域垂直/水平卷軸', '學校總表新增進場與完工日期'] },
+  { date: '2026-03-13', version: 'v1.8.0', notes: ['優化 AI 提示詞架構，餵入各行政區詳細統計', '新增 115年度排程達標率看板', '拆分 A4 列印模組 [1] 與 [1-1]'] },
   { date: '2026-03-13', version: 'v1.7.1', notes: ['修復 Gemini API 權限錯誤，全面升級至最新 gemini-2.5-flash 模型'] },
   { date: '2026-03-13', version: 'v1.7.0', notes: ['新增 A4 自訂排版列印模組：支援 8 大區塊自由勾選組合匯出'] },
-  { date: '2026-03-13', version: 'v1.6.0', notes: ['修復 Gemini API 模型權限問題', '新增全域 A4 視窗截圖/PDF 匯出功能 (2cm邊界)'] },
-  { date: '2026-03-13', version: 'v1.5.0', notes: ['新增 Gemini API Key 本機安全儲存介面', '支援外部 Vercel 部署之 AI 連線功能'] },
-  { date: '2026-03-13', version: 'v1.4.0', notes: ['新增即時日期顯示', '新增系統更新日誌區塊', '優化介面排版'] },
-  { date: '2026-03-12', version: 'v1.3.0', notes: ['新增 A4 Word 匯出功能', '實作羅浮學區跨層級整併邏輯'] },
-  { date: '2026-03-11', version: 'v1.2.0', notes: ['實作學校總表動態過濾卡片', '新增中央補助案不核定排除機制'] },
-  { date: '2026-03-10', version: 'v1.1.0', notes: ['新增項次自動編碼 (區分主案與重複案)', '新增手動排除歸戶機制', '整合 AI 戰情特助 (Gemini API)'] },
-  { date: '2026-03-09', version: 'v1.0.0', notes: ['匯入 159 筆局務會議初始資料', '建立戰情儀錶板與實際歸戶演算法'] },
+  { date: '2026-03-13', version: 'v1.6.0', notes: ['修復 Gemini API 模型權限問題', '新增全域 A4 視窗截圖/PDF 匯出功能'] },
 ];
 
 // --- 輔助函數：日期轉換與處理 ---
@@ -65,17 +60,21 @@ const determineLevel = (name) => {
   return '國小';
 };
 
-// --- 擴展表頭自訂欄寬元件 (無套件依賴) ---
+// --- 擴展表頭自訂欄寬元件 ---
 const ResizableTh = ({ children, minW = "100px", className = "" }) => (
     <th className="border border-gray-200 bg-gray-100 text-gray-700 sticky top-0 z-10 shadow-sm print-bg-gray-100 p-0 align-top">
-        <div 
-            className={`p-3 resize-x overflow-hidden whitespace-nowrap font-bold hover:bg-gray-200 transition-colors ${className}`} 
-            style={{ minWidth: minW, maxWidth: '600px' }}
-        >
+        <div className={`p-3 resize-x overflow-hidden whitespace-nowrap font-bold hover:bg-gray-200 transition-colors ${className}`} style={{ minWidth: minW, maxWidth: '600px' }}>
             {children}
         </div>
     </th>
 );
+
+// --- 初始預設新增物件 ---
+const DEFAULT_NEW_PROJECT = {
+    district: '桃園區', name: '', level: '國小', status: '規劃中', budgetSource1: '市府預算', budgetSource2: '公務預算', 
+    budgetAmount: 0, startDate: '', endDate: '', agency: '養工處', scheduleMonth: '', isExcluded: false, isNotApproved: false,
+    features: { pole: false, shelter: false, light: false, pickup: false }
+};
 
 // --- 由文本解析匯入之完整資料庫 (共159筆) ---
 const INITIAL_DATA = [
@@ -256,6 +255,10 @@ export default function App() {
     b1: false, b1_1: false, b2: false, b3: false, b4: false, b5: false, b6: false, b7: false, b8: false
   });
   
+  // --- 新增學校 State ---
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [newProject, setNewProject] = useState(DEFAULT_NEW_PROJECT);
+
   const [userApiKey, setUserApiKey] = useState(() => {
     if (typeof window !== 'undefined') return localStorage.getItem('ty_gemini_key') || '';
     return '';
@@ -268,10 +271,13 @@ export default function App() {
       setCurrentDate(formattedDate);
   }, []);
 
+  // --- AI 戰情特助 State (含上傳文件 RAG) ---
   const [isAIOpen, setIsAIOpen] = useState(false);
-  const [aiMessages, setAiMessages] = useState([{ role: 'ai', content: '長官您好！我是桃園市通學廊道的 AI 戰情特助。我已經讀取了「各行政區的最新統計數據」，您可以問我：「目前哪個行政區完工最多？」或「桃園區的預算執行進度如何？」' }]);
+  const [aiMessages, setAiMessages] = useState([{ role: 'ai', content: '長官您好！我是桃園市通學廊道的 AI 戰情特助。我已經讀取了「各行政區的最新統計數據」。\n\n💡 新功能提示：您可以點擊左下角的「迴紋針」上傳參考文件(txt檔)，並使用「產生新聞稿」功能為您草擬發布文稿！' }]);
   const [aiInput, setAiInput] = useState('');
   const [isAILoading, setIsAILoading] = useState(false);
+  const [aiContextText, setAiContextText] = useState(''); // 儲存上傳的文本內容
+  const aiFileInputRef = useRef(null);
   const aiChatEndRef = useRef(null);
 
   useEffect(() => {
@@ -414,12 +420,23 @@ export default function App() {
     };
   }, [projects]);
 
+  // --- 資料操作 CRUD ---
   const handleUpdateProject = (id, field, value) => { setProjects(prev => prev.map(p => p.id === id ? { ...p, [field]: value } : p)); setIsDirty(true); };
   const handleToggleExclude = (id) => { setProjects(prev => prev.map(p => p.id === id ? { ...p, isExcluded: !p.isExcluded } : p)); setIsDirty(true); };
   const handleToggleNotApproved = (id) => { setProjects(prev => prev.map(p => p.id === id ? { ...p, isNotApproved: !p.isNotApproved } : p)); setIsDirty(true); };
   const handleFeatureToggle = (id, feature) => {
     setProjects(prev => prev.map(p => { if (p.id === id) return { ...p, features: { ...p.features, [feature]: !p.features[feature] } }; return p; }));
     setIsDirty(true);
+  };
+
+  const handleAddNewProject = () => {
+    if (!newProject.name.trim()) { alert('請輸入學校/案件名稱'); return; }
+    const newId = Date.now().toString();
+    const projectToAdd = { ...newProject, id: newId };
+    setProjects([projectToAdd, ...projects]);
+    setIsDirty(true);
+    setIsAddModalOpen(false);
+    setNewProject(DEFAULT_NEW_PROJECT);
   };
 
   const handleFileUpload = (e) => {
@@ -458,67 +475,29 @@ export default function App() {
     document.body.appendChild(link); link.click(); document.body.removeChild(link);
   };
 
-  const exportWord = () => {
-    const centralProjects = projects.filter(p => p.budgetSource1 === '中央補助' && !p.isNotApproved);
-    const nlmaCases = centralProjects.filter(p => p.budgetSource2 === '國土署');
-    const motcCases = centralProjects.filter(p => p.budgetSource2 === '公路局');
-    const scheduleMonths = Array.from({length: 12}, (_, i) => i + 1);
-
-    const header = `
-      <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
-      <head><meta charset='utf-8'><title>桃園市通學廊道戰情儀錶板報表</title>
-        <style>
-          @page WordSection1 { size: 595.3pt 841.9pt; margin: 2.0cm 2.0cm 2.0cm 2.0cm; mso-header-margin: 35.4pt; mso-footer-margin: 35.4pt; mso-paper-source: 0; }
-          div.WordSection1 { page: WordSection1; }
-          body { font-family: 'Microsoft JhengHei', '微軟正黑體', sans-serif; font-size: 11pt; color: #333; line-height: 1.5; }
-          h1 { color: #E83888; text-align: center; font-size: 20pt; margin-bottom: 20px; font-weight: bold; }
-          h2 { color: #00B2E5; font-size: 14pt; border-bottom: 2px solid #00B2E5; padding-bottom: 5px; margin-top: 25px; page-break-after: avoid; font-weight: bold; }
-          table { border-collapse: collapse; width: 100%; margin-top: 10px; margin-bottom: 20px; }
-          th, td { border: 1px solid #999; padding: 6px 8px; text-align: left; vertical-align: middle; }
-          th { background-color: #f2f2f2; font-weight: bold; color: #000; }
-          .highlight { color: #d9534f; font-weight: bold; }
-          ul { margin-top: 5px; } li { margin-bottom: 5px; }
-          .text-center { text-align: center; } .text-right { text-align: right; }
-        </style>
-      </head><body><div class='WordSection1'>
-    `;
-    let content = `<h1>桃園市通學廊道專案進度報告</h1><p style="text-align: right; color: #666;">產出日期：${currentDate}</p>`;
-    content += `<h2>一、戰情儀錶板核心數據</h2><table><tr><th>指標</th><th>帳面數值</th><th>實際歸戶數值 (扣除重複案/排除案)</th></tr>
-        <tr><td>總錄案</td><td>${kpis.total} 所</td><td class="highlight">${kpis.actualTotal} 所</td></tr>
-        <tr><td>已完工</td><td>${kpis.completed} 所</td><td>${kpis.actualCompleted} 所</td></tr>
-        <tr><td>施工中</td><td>${kpis.inProgress} 所</td><td>${kpis.actualInProgress} 所</td></tr>
-        <tr><td>規劃中</td><td>${kpis.planning} 所</td><td>${kpis.actualPlanning} 所</td></tr>
-        <tr><td>總預算規模</td><td colspan="2" class="highlight">${kpis.totalBudget.toLocaleString()} 萬元</td></tr></table>`;
-    content += `<h2>二、中央補助案概況 (已扣除不核定案件)</h2><ul>
-        <li><strong>國土署：</strong>共計 ${nlmaCases.length} 案，總經費 ${nlmaCases.reduce((s,p)=>s+(Number(p.budgetAmount)||0),0).toLocaleString()} 萬元。</li>
-        <li><strong>交通部公路局：</strong>共計 ${motcCases.length} 案，總經費 ${motcCases.reduce((s,p)=>s+(Number(p.budgetAmount)||0),0).toLocaleString()} 萬元。</li></ul>
-      <table><tr><th width="15%">行政區</th><th width="35%">案名</th><th width="20%">補助單位</th><th width="15%">經費(萬)</th><th width="15%">狀態</th></tr>
-        ${centralProjects.map(p => `<tr><td class="text-center">${p.district}</td><td>${p.name}</td><td class="text-center">${p.budgetSource2}</td><td class="text-right">${Number(p.budgetAmount).toLocaleString()}</td><td class="text-center">${p.status}</td></tr>`).join('')}</table>`;
-    const validSchools = processedProjects.filter(p => !p.isExcluded);
-    content += `<h2>三、學校總表 (實際納入計算清單)</h2><table><tr><th width="10%">項次</th><th width="15%">行政區</th><th width="35%">案名</th><th width="15%">狀態</th><th width="15%">經費(萬)</th></tr>
-        ${validSchools.map(p => `<tr><td class="text-center">${p.itemNumber}</td><td class="text-center">${p.district}</td><td>${p.name}</td><td class="text-center">${p.status}</td><td class="text-right">${Number(p.budgetAmount).toLocaleString()}</td></tr>`).join('')}</table>`;
-    const scheduledProjects = projects.filter(p => p.scheduleMonth);
-    content += `<h2>四、115年度施工排程</h2><table><tr><th width="15%">月份</th><th>預計進場案件</th></tr>
-        ${scheduleMonths.map(m => {
-          const mProjs = scheduledProjects.filter(p => p.scheduleMonth === String(m));
-          return `<tr><td class="text-center" style="font-weight:bold;">${m} 月</td><td>${mProjs.length > 0 ? mProjs.map(p => `[${p.district}] ${p.name}`).join('、 ') : '尚無排程'}</td></tr>`;
-        }).join('')}</table>`;
-
-    const footer = `</div></body></html>`;
-    const blob = new Blob(['\ufeff', header + content + footer], { type: 'application/msword' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url; link.download = `桃園市通學廊道報表_${currentDate}.doc`;
-    document.body.appendChild(link); link.click(); document.body.removeChild(link);
-  };
-
   const saveChanges = () => { setIsDirty(false); alert('變更已儲存 (測試版僅儲存於記憶體，請使用匯出備份)'); };
 
-  const handleAiSubmit = async () => {
-    if (!aiInput.trim()) return;
-    const userMsg = aiInput;
+  // --- AI 助理核心邏輯 (支援 RAG 文件注入) ---
+  const handleAiFileUpload = (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (event) => {
+          setAiContextText(event.target.result);
+          setAiMessages(prev => [...prev, { role: 'ai', content: `✅ 報告長官！已成功讀取參考文件「${file.name}」。\n您可以隨時點擊下方的「產生新聞稿」按鈕，我會結合此文件與最新戰情數據為您草擬新聞稿。` }]);
+      };
+      reader.readAsText(file);
+      if(aiFileInputRef.current) aiFileInputRef.current.value = '';
+  };
+
+  const handleAiSubmit = async (overridePrompt = null) => {
+    const userMsg = overridePrompt || aiInput;
+    if (!userMsg.trim()) return;
+    
     const newMessages = [...aiMessages, { role: 'user', content: userMsg }];
-    setAiMessages(newMessages); setAiInput(''); setIsAILoading(true);
+    setAiMessages(newMessages); 
+    setAiInput(''); 
+    setIsAILoading(true);
 
     try {
         const activeKey = userApiKey;
@@ -527,13 +506,13 @@ export default function App() {
              setIsAILoading(false); return;
         }
         
-        // 將行政區統計資料打包餵給 AI，擴充它的情境知識 (RAG 架構)
+        // RAG 架構：將行政區統計資料打包餵給 AI
         const districtContext = kpis.districtCards.filter(d => d.name !== '全市總計').map(d => 
             `- ${d.name}: 實際歸戶 ${d.actualTotal} 所 (完工 ${d.actualCompleted}, 施工 ${d.actualInProgress}, 規劃 ${d.actualPlanning}, 暫緩 ${d.actualPaused}), 總經費 ${d.totalBudget.toLocaleString()} 萬`
         ).join('\n');
 
         const systemPrompt = `你是一位專業的「桃園市通學廊道AI戰情特助」。請以繁體中文、專業且具有法人幕僚風格的語氣回答。
-【當前戰情室資料 Context】
+【當前戰情室動態數據 (Context)】
 - 總立案數：${kpis.total} 案
 - 總預算金額：${kpis.totalBudget.toLocaleString()} 萬元
 - 已完工：${kpis.completed} 案 (已完工金額: ${kpis.completedBudget.toLocaleString()} 萬元)
@@ -544,7 +523,10 @@ export default function App() {
 【各行政區實際歸戶進度與經費】
 ${districtContext}
 
-請根據以上資料精準回答使用者的問題，若使用者詢問特定區域的進度或花費，請從上述「各行政區實際歸戶進度」中提取數據作答。若超出此資料範圍，請誠實說明系統尚未載入該數據。`;
+【使用者上傳的參考資料 (若無則顯示無)】
+${aiContextText || '目前無上傳參考資料。'}
+
+請根據以上資料精準回答使用者的問題。若使用者要求「撰寫新聞稿」，請將上傳的參考資料融合當前的數據亮點，寫出一篇排版精美、結構清晰、適合發布給媒體的官方新聞稿。`;
 
         const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${activeKey}`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -558,18 +540,16 @@ ${districtContext}
     } finally { setIsAILoading(false); }
   };
 
+  const handleGeneratePR = () => {
+      const prompt = "請綜合目前的戰情儀錶板數據，以及我剛才上傳的參考資料，幫我撰寫一篇「桃園市通學廊道專案進度與亮點」的新聞稿。要求語氣專業、數據精準，並加上適當的標題。";
+      handleAiSubmit(prompt);
+  };
+
   // --- 列印模組前置設定：打開彈窗並智慧預選 ---
   const openPrintConfig = () => {
       setPrintSelection({
-          b1: activeTab === 'dashboard',
-          b1_1: activeTab === 'dashboard',
-          b2: activeTab === 'dashboard',
-          b3: activeTab === 'dashboard',
-          b4: activeTab === 'central',
-          b5: activeTab === 'central',
-          b6: activeTab === 'schools',
-          b7: activeTab === 'schools',
-          b8: activeTab === 'schedule',
+          b1: activeTab === 'dashboard', b1_1: activeTab === 'dashboard', b2: activeTab === 'dashboard', b3: activeTab === 'dashboard',
+          b4: activeTab === 'central', b5: activeTab === 'central', b6: activeTab === 'schools', b7: activeTab === 'schools', b8: activeTab === 'schedule',
       });
       setIsPrintModalOpen(true);
   };
@@ -578,7 +558,6 @@ ${districtContext}
   // 螢幕與列印共用的 JSX 區塊 (模組化拆解)
   // ==========================================
   
-  // [1] 錄案與經費概況總覽 (上方 6 格)
   const Block1_Overview = () => (
     <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 mb-6 print-border-l-primary print-avoid-break" style={{ borderColor: COLORS.primary }}>
         <h2 className="text-xl font-bold mb-4" style={{ color: COLORS.primary }}>[1] 錄案與經費概況總覽</h2>
@@ -593,7 +572,6 @@ ${districtContext}
     </div>
   );
 
-  // [1-1] 實際學校數量統計 (下方 5 格)
   const Block1_1_ActualStats = () => (
     <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 mb-6 print-avoid-break print-border-l-gray-800" style={{ borderColor: '#1F2937' }}>
         <h2 className="text-lg font-bold mb-4 text-gray-800 flex items-center"><Check className="w-5 h-5 mr-1 text-green-500"/> [1-1] 實際學校數量統計 (排除期數重複案與手動排除件)</h2>
@@ -607,7 +585,6 @@ ${districtContext}
     </div>
   );
 
-  // [2] 預算來源分析圓餅圖
   const Block2_PieCharts = () => (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6 print-avoid-break">
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
@@ -621,7 +598,6 @@ ${districtContext}
     </div>
   );
 
-  // [3] 行政區進度與經費卡片
   const Block3_DistrictCards = () => (
     <div className="bg-white p-6 rounded-xl shadow-sm mb-6 print-avoid-break">
          <h2 className="text-lg font-bold mb-4">[3] 行政區進度與經費卡片 (實際歸戶後)</h2>
@@ -642,7 +618,6 @@ ${districtContext}
     </div>
   );
 
-  // [4] 中央補助案統計概況
   const Block4_CentralStats = () => {
     const centralProjects = projects.filter(p => p.budgetSource1 === '中央補助');
     const filtered = filterDist === 'All' ? centralProjects : centralProjects.filter(p => p.district === filterDist);
@@ -667,7 +642,6 @@ ${districtContext}
     );
   };
 
-  // [5] 中央補助案清單
   const Block5_CentralTable = () => {
       const centralProjects = projects.filter(p => p.budgetSource1 === '中央補助');
       const filtered = filterDist === 'All' ? centralProjects : centralProjects.filter(p => p.district === filterDist);
@@ -703,7 +677,6 @@ ${districtContext}
       );
   };
 
-  // [6] 學校狀態統計卡片
   const Block6_SchoolStats = () => (
       <div className="mb-6 print-avoid-break">
         <h2 className="text-lg font-bold mb-3 border-l-4 pl-2" style={{ borderColor: COLORS.warmYellow }}>[6] 學校總表過濾統計 ({schoolDistrictFilter === 'All' ? '全市' : schoolDistrictFilter})</h2>
@@ -717,10 +690,15 @@ ${districtContext}
       </div>
   );
 
-  // [7] 學校總表清單 (支援雙向捲軸與欄位自適應縮放)
   const Block7_SchoolTable = () => (
       <div className="flex-1 flex flex-col min-h-0 mb-2">
-        <h2 className="text-lg font-bold mb-3 border-l-4 pl-2 flex-shrink-0" style={{ borderColor: COLORS.warmYellow }}>[7] 學校總表清單明細 (顯示 {displayProjects.length} 筆)</h2>
+        <div className="flex justify-between items-center mb-3">
+            <h2 className="text-lg font-bold border-l-4 pl-2" style={{ borderColor: COLORS.warmYellow }}>[7] 學校總表清單明細 (顯示 {displayProjects.length} 筆)</h2>
+            {/* 新增按鈕 (僅在螢幕顯示) */}
+            <button onClick={() => setIsAddModalOpen(true)} className="screen-only flex items-center bg-pink-500 text-white px-3 py-1.5 rounded text-sm font-bold shadow hover:bg-pink-600 transition-colors">
+                <Plus className="w-4 h-4 mr-1"/> 新增學校
+            </button>
+        </div>
         <div className="flex-1 overflow-auto border rounded print-table-wrapper bg-white shadow-inner">
             <table className="w-full text-sm text-left relative print-table" style={{ borderCollapse: 'separate', borderSpacing: 0 }}>
                 <thead className="text-xs">
@@ -753,7 +731,7 @@ ${districtContext}
                             <td className="p-2 border-b text-center text-gray-600 font-mono tracking-tighter">{p.endDate || '-'}</td>
                             <td className="p-2 border-b text-center">{p.budgetSource1}</td>
                             <td className="p-2 border-b text-xs text-gray-500 text-center">{p.budgetSource2}</td>
-                            <td className="p-2 border-b text-right font-mono font-bold text-gray-700">{p.budgetAmount.toLocaleString()}</td>
+                            <td className="p-2 border-b text-right font-mono font-bold text-gray-700">{Number(p.budgetAmount).toLocaleString()}</td>
                             <td className="p-2 border-b text-xs text-gray-600 text-center">{p.agency}</td>
                         </tr>
                     ))}
@@ -763,7 +741,6 @@ ${districtContext}
       </div>
   );
 
-  // [8] 115年排程看板與數據
   const Block8_Schedule = () => {
      const months = Array.from({length: 12}, (_, i) => i + 1);
      const scheduledProjects = projects.filter(p => p.scheduleMonth);
@@ -855,11 +832,12 @@ ${districtContext}
         <Block6_SchoolStats />
         <Block7_SchoolTable />
 
+        {/* --- 編輯既有案件 Modal --- */}
         {selectedProject && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 animate-fade-in screen-only">
                 <div className="bg-white w-[600px] rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
                     <div className="bg-gradient-to-r from-pink-500 to-rose-500 p-4 text-white flex justify-between items-center"><h3 className="font-bold text-lg flex items-center"><Building2 className="mr-2"/> 個案詳細資訊卡</h3><button onClick={() => setSelectedProject(null)} className="text-white hover:text-gray-200 transition-transform hover:scale-110"><X className="w-6 h-6" /></button></div>
-                    <div className="p-6 overflow-y-auto flex-1 space-y-4">
+                    <div className="p-6 overflow-y-auto flex-1 space-y-4 custom-scrollbar">
                         <div className="grid grid-cols-2 gap-4">
                             <div><label className="block text-xs text-gray-500 mb-1">案名(學校)</label><input type="text" className="w-full border p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none" value={selectedProject.name} onChange={e => handleUpdateProject(selectedProject.id, 'name', e.target.value)} /></div>
                             <div><label className="block text-xs text-gray-500 mb-1">Google定位</label><a href={`https://www.google.com/maps/search/?api=1&query=${selectedProject.district}${selectedProject.name}`} target="_blank" rel="noreferrer" className="flex items-center justify-center h-[42px] text-blue-500 border p-2 rounded hover:bg-blue-50 transition-colors font-bold"><MapPin className="w-4 h-4 mr-2"/> 開啟地圖搜尋</a></div>
@@ -890,6 +868,49 @@ ${districtContext}
                 </div>
             </div>
         )}
+
+        {/* --- 新增案件 Modal --- */}
+        {isAddModalOpen && (
+            <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[60] animate-fade-in backdrop-blur-sm screen-only">
+                <div className="bg-white w-[600px] rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] border-t-4 border-pink-500">
+                    <div className="bg-white p-4 flex justify-between items-center border-b">
+                        <h3 className="font-bold text-xl flex items-center text-gray-800"><Plus className="mr-2 text-pink-500"/> 新增學校/案件</h3>
+                        <button onClick={() => setIsAddModalOpen(false)} className="text-gray-400 hover:text-red-500 transition-colors"><X className="w-6 h-6" /></button>
+                    </div>
+                    <div className="p-6 overflow-y-auto flex-1 space-y-4 custom-scrollbar bg-gray-50/50">
+                        <div className="grid grid-cols-2 gap-4">
+                            <div><label className="block text-xs text-gray-500 mb-1 font-bold">案名(學校) <span className="text-red-500">*</span></label><input type="text" className="w-full border border-gray-300 p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none" placeholder="輸入學校名稱..." value={newProject.name} onChange={e => setNewProject({...newProject, name: e.target.value})} /></div>
+                            <div><label className="block text-xs text-gray-500 mb-1 font-bold">行政區</label><select className="w-full border border-gray-300 p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none" value={newProject.district} onChange={e => setNewProject({...newProject, district: e.target.value})}>{DISTRICTS.map(d => <option key={d} value={d}>{d}</option>)}</select></div>
+                             <div><label className="block text-xs text-gray-500 mb-1 font-bold">層級</label><select className="w-full border border-gray-300 p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none" value={newProject.level} onChange={e => setNewProject({...newProject, level: e.target.value})}>{LEVELS.map(l => <option key={l} value={l}>{l}</option>)}</select></div>
+                             <div><label className="block text-xs text-gray-500 mb-1 font-bold">執行狀態</label><select className="w-full border border-gray-300 p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none text-blue-700 font-bold" value={newProject.status} onChange={e => setNewProject({...newProject, status: e.target.value})}>{STATUSES.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
+                            <div><label className="block text-xs text-gray-500 mb-1 font-bold">機關</label><input type="text" className="w-full border border-gray-300 p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none" value={newProject.agency} onChange={e => setNewProject({...newProject, agency: e.target.value})} /></div>
+                            <div><label className="block text-xs text-gray-500 mb-1 font-bold">排程月份</label><select className="w-full border border-gray-300 p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none text-teal-700" value={newProject.scheduleMonth} onChange={e => setNewProject({...newProject, scheduleMonth: e.target.value})}><option value="">暫不排程</option>{Array.from({length:12},(_,i)=>i+1).map(m=><option key={m} value={String(m)}>{m}月</option>)}</select></div>
+                            <div><label className="block text-xs text-gray-500 mb-1 font-bold">進場日期</label><input type="text" className="w-full border border-gray-300 p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none font-mono" placeholder="YYYY/MM/DD" value={newProject.startDate} onChange={e => setNewProject({...newProject, startDate: e.target.value})} /></div>
+                            <div><label className="block text-xs text-gray-500 mb-1 font-bold">完工日期</label><input type="text" className="w-full border border-gray-300 p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none font-mono" placeholder="YYYY/MM/DD" value={newProject.endDate} onChange={e => setNewProject({...newProject, endDate: e.target.value})} /></div>
+                        </div>
+                        <div className="border-t border-gray-200 pt-4 grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-xs text-gray-500 mb-1 font-bold">預算來源大項</label>
+                                <select className="w-full border border-gray-300 p-2 rounded mb-2 focus:ring-2 focus:ring-pink-300 outline-none font-bold" value={newProject.budgetSource1} onChange={e => setNewProject({...newProject, budgetSource1: e.target.value, budgetSource2: ''})}><option value="市府預算">市府預算</option><option value="中央補助">中央補助</option></select>
+                                <label className="block text-xs text-gray-500 mb-1 font-bold">預算細項</label>
+                                <select className="w-full border border-gray-300 p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none" value={newProject.budgetSource2} onChange={e => setNewProject({...newProject, budgetSource2: e.target.value})}>
+                                     <option value="">請選擇</option>
+                                    {newProject.budgetSource1 === '市府預算' ? (<><option value="公務預算">公務預算</option><option value="道路基金">道路基金</option><option value="其他基金">其他基金</option><option value="統籌分配">統籌分配</option></>) : (<><option value="國土署">國土署</option><option value="公路局">公路局</option></>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs text-gray-500 mb-1 font-bold">總經費(萬元)</label>
+                                <input type="number" className="w-full border border-gray-300 p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none font-mono font-bold text-pink-600 text-lg" value={newProject.budgetAmount} onChange={e => setNewProject({...newProject, budgetAmount: Number(e.target.value)})} />
+                            </div>
+                        </div>
+                    </div>
+                    <div className="p-4 border-t bg-white flex justify-end space-x-3">
+                        <button className="px-5 py-2 rounded text-gray-500 hover:bg-gray-100 font-bold" onClick={() => setIsAddModalOpen(false)}>取消</button>
+                        <button className="px-6 py-2 bg-pink-500 text-white font-bold rounded shadow-md hover:bg-pink-600 transition-colors flex items-center" onClick={handleAddNewProject}><Plus className="w-4 h-4 mr-2"/> 確認新增</button>
+                    </div>
+                </div>
+            </div>
+        )}
       </div>
   );
 
@@ -904,7 +925,7 @@ ${districtContext}
                 <div className="w-1/3 min-w-[350px] max-w-[450px] bg-white border-r p-4 flex flex-col shadow-inner">
                     <h3 className="font-bold text-gray-600 mb-3 border-b pb-2 flex items-center justify-between flex-shrink-0">
                         <span>待排程清單</span>
-                        <span className="bg-teal-100 text-teal-800 text-xs px-2 py-1 rounded-full">{unscheduledProjects.length} 案</span>
+                        <span className="bg-teal-100 text-teal-800 text-xs px-2 py-1 rounded-full font-mono">{unscheduledProjects.length} 案</span>
                     </h3>
                     <div className="space-y-2 overflow-y-auto flex-1 pr-2 custom-scrollbar">
                         {unscheduledProjects.map(p => (
@@ -969,6 +990,9 @@ ${districtContext}
 
   return (
     <>
+    {/* ========================================== */}
+    {/* 【正常螢幕操作介面】 (列印時會完全隱藏) */}
+    {/* ========================================== */}
     <div className="flex h-screen bg-gray-100 font-sans text-gray-800 relative screen-only overflow-hidden">
       <aside className="w-64 bg-gray-900 text-white flex flex-col shadow-xl z-20 flex-shrink-0">
         <div className="p-6 border-b border-gray-800 flex items-center justify-between">
@@ -1026,11 +1050,23 @@ ${districtContext}
       {/* --- AI 戰情特助 --- */}
       <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end">
         {isAIOpen && (
-            <div className="w-80 h-[450px] bg-white rounded-xl shadow-2xl border border-pink-100 mb-4 flex flex-col overflow-hidden animate-fade-in">
+            <div className="w-[360px] h-[550px] bg-white rounded-xl shadow-2xl border border-pink-100 mb-4 flex flex-col overflow-hidden animate-fade-in">
                 <div className="bg-gradient-to-r from-pink-500 to-purple-600 p-3 text-white flex justify-between items-center shadow-md">
                     <div className="flex items-center font-bold"><MessageCircle className="w-5 h-5 mr-2" /> AI 戰情特助</div>
                     <button onClick={() => setIsAIOpen(false)} className="hover:text-pink-200 transition-colors"><X className="w-5 h-5" /></button>
                 </div>
+                
+                {/* 快捷指令列 */}
+                <div className="bg-gray-50 p-2 border-b flex space-x-2 overflow-x-auto custom-scrollbar">
+                    <button onClick={handleGeneratePR} className="flex-shrink-0 flex items-center px-3 py-1.5 bg-white border border-pink-200 text-pink-600 rounded-full text-xs font-bold hover:bg-pink-50 transition-colors shadow-sm">
+                        <FileOutput className="w-3 h-3 mr-1"/> 產生新聞稿
+                    </button>
+                    <input type="file" accept=".txt" className="hidden" ref={aiFileInputRef} onChange={handleAiFileUpload} />
+                    <button onClick={() => aiFileInputRef.current.click()} className="flex-shrink-0 flex items-center px-3 py-1.5 bg-white border border-blue-200 text-blue-600 rounded-full text-xs font-bold hover:bg-blue-50 transition-colors shadow-sm" title="上傳TXT參考資料供AI閱讀">
+                        <Paperclip className="w-3 h-3 mr-1"/> 上傳參考資料
+                    </button>
+                </div>
+
                 <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50 text-sm custom-scrollbar">
                     {aiMessages.map((msg, idx) => (
                         <div key={idx} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
@@ -1042,7 +1078,7 @@ ${districtContext}
                 </div>
                 <div className="p-3 bg-white border-t border-gray-100 flex items-center">
                     <input type="text" className="flex-1 border-0 bg-gray-100 rounded-full px-4 py-2 text-sm focus:ring-2 focus:ring-pink-300 outline-none transition-all" placeholder={userApiKey ? "請輸入問題..." : "請先至設定頁輸入金鑰..."} value={aiInput} onChange={e => setAiInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAiSubmit()} disabled={isAILoading || !userApiKey} />
-                    <button className={`ml-2 p-2 rounded-full ${aiInput.trim() && !isAILoading && userApiKey ? 'bg-pink-500 text-white hover:bg-pink-600' : 'bg-gray-200 text-gray-400 cursor-not-allowed'} transition-colors`} onClick={handleAiSubmit} disabled={!aiInput.trim() || isAILoading || !userApiKey}><Send className="w-4 h-4" /></button>
+                    <button className={`ml-2 p-2 rounded-full ${aiInput.trim() && !isAILoading && userApiKey ? 'bg-pink-500 text-white hover:bg-pink-600' : 'bg-gray-200 text-gray-400 cursor-not-allowed'} transition-colors`} onClick={() => handleAiSubmit()} disabled={!aiInput.trim() || isAILoading || !userApiKey}><Send className="w-4 h-4" /></button>
                 </div>
             </div>
         )}
