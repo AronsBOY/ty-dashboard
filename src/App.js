@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
-import { LayoutDashboard, Building2, Calendar, Database, Download, Upload, Save, MapPin, Image as ImageIcon, Search, AlertCircle, Edit, CheckSquare, Square, Check, MessageCircle, X, Send, Filter, FileText, Clock, History } from 'lucide-react';
+import { LayoutDashboard, Building2, Calendar, Database, Download, Upload, Save, MapPin, Image as ImageIcon, Search, AlertCircle, Edit, CheckSquare, Square, Check, MessageCircle, X, Send, Filter, FileText, Clock, History, Key } from 'lucide-react';
 
 // --- 桃園市品牌色系 ---
 const COLORS = {
@@ -20,6 +20,7 @@ const STATUSES = ['已完工', '施工中', '規劃中', '暫緩'];
 
 // --- 系統更新日誌資料 ---
 const CHANGELOG = [
+  { date: '2026-03-13', version: 'v1.5.0', notes: ['新增 Gemini API Key 本機安全儲存介面', '支援外部 Vercel 部署之 AI 連線功能'] },
   { date: '2026-03-13', version: 'v1.4.0', notes: ['新增即時日期顯示', '新增系統更新日誌區塊', '優化介面排版'] },
   { date: '2026-03-12', version: 'v1.3.0', notes: ['新增 A4 Word 匯出功能', '實作羅浮學區跨層級整併邏輯'] },
   { date: '2026-03-11', version: 'v1.2.0', notes: ['實作學校總表動態過濾卡片', '新增中央補助案不核定排除機制'] },
@@ -41,12 +42,12 @@ const cleanDate = (dateStr) => {
 
 const getBaseName = (name) => {
   if (!name) return '';
-  if (name.includes('羅浮')) return '羅浮學區'; // 將羅浮各級學校整併為同一學區
+  if (name.includes('羅浮')) return '羅浮學區'; 
   return name.replace(/[1-3](期|\.0)/g, '').replace(/(\(.*\))/g, '').trim();
 };
 
 const isDuplicateName = (name) => {
-    if (name.includes('羅浮') && !name.includes('高中')) return true; // 將羅浮高中視為主案，其餘為衍生案
+    if (name.includes('羅浮') && !name.includes('高中')) return true; 
     return /[1-3](期|\.0)/.test(name);
 }
 
@@ -241,11 +242,18 @@ export default function App() {
   const [isDirty, setIsDirty] = useState(false);
   const [filterDist, setFilterDist] = useState('All');
   const [schoolDistrictFilter, setSchoolDistrictFilter] = useState('All');
-  const [tableStatusFilter, setTableStatusFilter] = useState('All'); // 新增: 狀態下鑽過濾器
+  const [tableStatusFilter, setTableStatusFilter] = useState('All'); 
   const [selectedProject, setSelectedProject] = useState(null);
   const fileInputRef = useRef(null);
   
-  // 取得即時日期
+  // 新增：使用者自訂 API Key 狀態 (儲存於 localStorage)
+  const [userApiKey, setUserApiKey] = useState(() => {
+    if (typeof window !== 'undefined') {
+        return localStorage.getItem('ty_gemini_key') || '';
+    }
+    return '';
+  });
+  
   const [currentDate, setCurrentDate] = useState('');
   useEffect(() => {
       const today = new Date();
@@ -253,23 +261,19 @@ export default function App() {
       setCurrentDate(formattedDate);
   }, []);
 
-  // AI 助理相關 State
   const [isAIOpen, setIsAIOpen] = useState(false);
-  const [aiMessages, setAiMessages] = useState([{ role: 'ai', content: '您好！我是桃園市通學廊道的AI戰情特助。我可以根據目前的儀錶板數據回答您的問題，例如：「目前完工比例是多少？」、「總經費花了多少？」' }]);
+  const [aiMessages, setAiMessages] = useState([{ role: 'ai', content: '您好！我是桃園市通學廊道的AI戰情特助。我可以根據目前的儀錶板數據回答您的問題，例如：「目前完工比例是多少？」' }]);
   const [aiInput, setAiInput] = useState('');
   const [isAILoading, setIsAILoading] = useState(false);
   const aiChatEndRef = useRef(null);
 
-  // 自動捲動 AI 對話視窗
   useEffect(() => {
     if (aiChatEndRef.current) aiChatEndRef.current.scrollIntoView({ behavior: 'smooth' });
   }, [aiMessages]);
 
-  // --- 計算：動態處理「項次」邏輯 ---
   const processedProjects = useMemo(() => {
     let currentIndex = 1;
     const groupMap = {};
-
     projects.forEach(p => {
         const base = getBaseName(p.name);
         if (!groupMap[base]) {
@@ -277,29 +281,23 @@ export default function App() {
         }
         groupMap[base].totalInstances++;
     });
-
     return projects.map(p => {
         const base = getBaseName(p.name);
         const groupInfo = groupMap[base];
         groupInfo.currentSubIdx++;
-        
         const itemNumber = groupInfo.totalInstances > 1 
             ? `${groupInfo.primaryIdx}-${groupInfo.currentSubIdx}` 
             : `${groupInfo.primaryIdx}`;
-
         return { ...p, itemNumber };
     });
   }, [projects]);
 
-
-  // --- 計算：過濾後的表格資料與其專屬「實際狀態」統計 ---
   const filteredByDistrictProjects = useMemo(() => {
     return schoolDistrictFilter === 'All' 
         ? processedProjects 
         : processedProjects.filter(p => p.district === schoolDistrictFilter);
   }, [processedProjects, schoolDistrictFilter]);
 
-  // 計算頂部卡片的實際統計數據 (排除已勾選為 isExcluded 的專案)
   const tableStats = useMemo(() => {
     const groups = {};
     filteredByDistrictProjects.forEach(p => {
@@ -308,44 +306,33 @@ export default function App() {
         if (!groups[base]) groups[base] = [];
         groups[base].push(p);
     });
-
     let actualTotal = 0, actualCompleted = 0, actualInProgress = 0, actualPlanning = 0, actualPaused = 0;
     const statusPriority = { '已完工': 4, '施工中': 3, '規劃中': 2, '暫緩': 1 };
-
     Object.values(groups).forEach(group => {
         actualTotal++;
         let highestStatus = group[0].status;
-        
         group.forEach(p => {
             if (statusPriority[p.status] > statusPriority[highestStatus]) {
                 highestStatus = p.status;
             }
         });
-
         if (highestStatus === '已完工') actualCompleted++;
         else if (highestStatus === '施工中') actualInProgress++;
         else if (highestStatus === '規劃中') actualPlanning++;
         else if (highestStatus === '暫緩') actualPaused++;
     });
-
     return { actualTotal, actualCompleted, actualInProgress, actualPlanning, actualPaused };
   }, [filteredByDistrictProjects]);
 
-  // 根據使用者在上方卡片點擊的狀態進行過濾
   const displayProjects = useMemo(() => {
     if (tableStatusFilter === 'All') return filteredByDistrictProjects;
     return filteredByDistrictProjects.filter(p => p.status === tableStatusFilter);
   }, [filteredByDistrictProjects, tableStatusFilter]);
 
-  // --- 計算指標 (KPIs) ---
   const kpis = useMemo(() => {
     let total = projects.length;
     let completed = 0, inProgress = 0, planning = 0, paused = 0, duplicatedCount = 0;
-    
-    let totalBudget = 0;
-    let completedBudget = 0;
-    let inProgressBudget = 0;
-
+    let totalBudget = 0, completedBudget = 0, inProgressBudget = 0;
     const baseNameGroups = {};
     const statusPriority = { '已完工': 4, '施工中': 3, '規劃中': 2, '暫緩': 1 };
 
@@ -361,16 +348,13 @@ export default function App() {
       if (p.status === '施工中') { inProgress++; inProgressBudget += amt; }
       if (p.status === '規劃中') planning++;
       if (p.status === '暫緩') paused++;
-      
       totalBudget += amt;
-
       if (isDuplicateName(p.name) || baseNameGroups[getBaseName(p.name)].length > 1) {
           if(isDuplicateName(p.name)) duplicatedCount++;
       }
     });
 
     const sumBudget = (arr) => arr.reduce((sum, p) => sum + (Number(p.budgetAmount) || 0), 0);
-
     const budgetSourceData = [
       { name: '中央補助', value: sumBudget(projects.filter(p => p.budgetSource1 === '中央補助' && !p.isExcluded)) },
       { name: '市府預算', value: sumBudget(projects.filter(p => p.budgetSource1 === '市府預算' && !p.isExcluded)) },
@@ -384,14 +368,12 @@ export default function App() {
     const districtStats = DISTRICTS.map(dist => {
       const distProjects = projects.filter(p => p.district === dist);
       const groups = {};
-      
       distProjects.forEach(p => {
           if (p.isExcluded) return; 
           const base = getBaseName(p.name);
           if (!groups[base]) groups[base] = [];
           groups[base].push(p);
       });
-
       let actualTotal = 0, actualCompleted = 0, actualInProgress = 0, actualPlanning = 0, actualPaused = 0;
       let dTotalBudget = 0, dCompletedBudget = 0, dInProgressBudget = 0, dPlanningBudget = 0, dPausedBudget = 0;
 
@@ -399,98 +381,70 @@ export default function App() {
           actualTotal++;
           let highestStatus = group[0].status;
           let groupBudget = 0; 
-
           group.forEach(p => {
               groupBudget += (Number(p.budgetAmount) || 0);
               if (statusPriority[p.status] > statusPriority[highestStatus]) {
                   highestStatus = p.status;
               }
           });
-
           dTotalBudget += groupBudget;
-
           if (highestStatus === '已完工') { actualCompleted++; dCompletedBudget += groupBudget; }
           else if (highestStatus === '施工中') { actualInProgress++; dInProgressBudget += groupBudget; }
           else if (highestStatus === '規劃中') { actualPlanning++; dPlanningBudget += groupBudget; }
           else if (highestStatus === '暫緩') { actualPaused++; dPausedBudget += groupBudget; }
       });
-
       return {
-          name: dist,
-          actualTotal, totalBudget: dTotalBudget,
-          actualCompleted, completedBudget: dCompletedBudget,
-          actualInProgress, inProgressBudget: dInProgressBudget,
-          actualPlanning, planningBudget: dPlanningBudget,
+          name: dist, actualTotal, totalBudget: dTotalBudget, actualCompleted, completedBudget: dCompletedBudget,
+          actualInProgress, inProgressBudget: dInProgressBudget, actualPlanning, planningBudget: dPlanningBudget,
           actualPaused, pausedBudget: dPausedBudget
       };
     });
 
     const cityTotalCard = districtStats.reduce((acc, curr) => ({
         name: '全市總計',
-        actualTotal: acc.actualTotal + curr.actualTotal,
-        totalBudget: acc.totalBudget + curr.totalBudget,
-        actualCompleted: acc.actualCompleted + curr.actualCompleted,
-        completedBudget: acc.completedBudget + curr.completedBudget,
-        actualInProgress: acc.actualInProgress + curr.actualInProgress,
-        inProgressBudget: acc.inProgressBudget + curr.inProgressBudget,
-        actualPlanning: acc.actualPlanning + curr.actualPlanning,
-        planningBudget: acc.planningBudget + curr.planningBudget,
-        actualPaused: acc.actualPaused + curr.actualPaused,
-        pausedBudget: acc.pausedBudget + curr.pausedBudget,
+        actualTotal: acc.actualTotal + curr.actualTotal, totalBudget: acc.totalBudget + curr.totalBudget,
+        actualCompleted: acc.actualCompleted + curr.actualCompleted, completedBudget: acc.completedBudget + curr.completedBudget,
+        actualInProgress: acc.actualInProgress + curr.actualInProgress, inProgressBudget: acc.inProgressBudget + curr.inProgressBudget,
+        actualPlanning: acc.actualPlanning + curr.actualPlanning, planningBudget: acc.planningBudget + curr.planningBudget,
+        actualPaused: acc.actualPaused + curr.actualPaused, pausedBudget: acc.pausedBudget + curr.pausedBudget,
     }), {
         name: '全市總計', actualTotal: 0, totalBudget: 0, actualCompleted: 0, completedBudget: 0,
         actualInProgress: 0, inProgressBudget: 0, actualPlanning: 0, planningBudget: 0, actualPaused: 0, pausedBudget: 0
     });
 
     return {
-      total, completed, inProgress, planning, paused, duplicatedCount,
-      totalBudget, completedBudget, inProgressBudget,
-      actualTotal: cityTotalCard.actualTotal,
-      actualCompleted: cityTotalCard.actualCompleted,
-      actualInProgress: cityTotalCard.actualInProgress,
-      actualPlanning: cityTotalCard.actualPlanning,
-      actualPaused: cityTotalCard.actualPaused,
-      budgetSourceData,
-      centralSourceData,
-      districtCards: [...districtStats, cityTotalCard]
+      total, completed, inProgress, planning, paused, duplicatedCount, totalBudget, completedBudget, inProgressBudget,
+      actualTotal: cityTotalCard.actualTotal, actualCompleted: cityTotalCard.actualCompleted, actualInProgress: cityTotalCard.actualInProgress,
+      actualPlanning: cityTotalCard.actualPlanning, actualPaused: cityTotalCard.actualPaused,
+      budgetSourceData, centralSourceData, districtCards: [...districtStats, cityTotalCard]
     };
   }, [projects]);
 
-
-  // --- 資料操作處理 ---
   const handleUpdateProject = (id, field, value) => {
     setProjects(prev => prev.map(p => p.id === id ? { ...p, [field]: value } : p));
     setIsDirty(true);
   };
-
   const handleToggleExclude = (id) => {
     setProjects(prev => prev.map(p => p.id === id ? { ...p, isExcluded: !p.isExcluded } : p));
     setIsDirty(true);
   };
-
-  // 處理「不核定」
   const handleToggleNotApproved = (id) => {
     setProjects(prev => prev.map(p => p.id === id ? { ...p, isNotApproved: !p.isNotApproved } : p));
     setIsDirty(true);
   };
-
   const handleFeatureToggle = (id, feature) => {
     setProjects(prev => prev.map(p => {
-      if (p.id === id) {
-        return { ...p, features: { ...p.features, [feature]: !p.features[feature] } };
-      }
+      if (p.id === id) return { ...p, features: { ...p.features, [feature]: !p.features[feature] } };
       return p;
     }));
     setIsDirty(true);
   };
 
-  // --- 匯出功能：CSV 與 Word ---
   const exportCSV = () => {
     const headers = ['ID', '行政區', '案名', '層級', '狀態', '預算來源(大項)', '預算來源(細項)', '經費(萬)', '開工日', '完工日', '執行機關', '排程月份', '排除歸戶', '不核定'];
     const rows = projects.map(p => [
       p.id, p.district, p.name, p.level, p.status, p.budgetSource1, p.budgetSource2, p.budgetAmount, p.startDate, p.endDate, p.agency, p.scheduleMonth, p.isExcluded ? 'Y' : 'N', p.isNotApproved ? 'Y' : 'N'
     ]);
-    
     const csvContent = "data:text/csv;charset=utf-8,\uFEFF" + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
@@ -502,28 +456,16 @@ export default function App() {
   };
 
   const exportWord = () => {
-    // 預先計算需要的資料
     const centralProjects = projects.filter(p => p.budgetSource1 === '中央補助' && !p.isNotApproved);
     const nlmaCases = centralProjects.filter(p => p.budgetSource2 === '國土署');
     const motcCases = centralProjects.filter(p => p.budgetSource2 === '公路局');
     const scheduleMonths = Array.from({length: 12}, (_, i) => i + 1);
 
-    // 建立 HTML-to-Word 的結構 (使用 mso-word 特定標籤與 CSS 控制邊界)
     const header = `
-      <html xmlns:o='urn:schemas-microsoft-com:office:office' 
-            xmlns:w='urn:schemas-microsoft-com:office:word' 
-            xmlns='http://www.w3.org/TR/REC-html40'>
-      <head>
-        <meta charset='utf-8'>
-        <title>桃園市通學廊道戰情儀錶板報表</title>
+      <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+      <head><meta charset='utf-8'><title>桃園市通學廊道戰情儀錶板報表</title>
         <style>
-          @page WordSection1 { 
-              size: 595.3pt 841.9pt; /* A4 size */
-              margin: 2.0cm 2.0cm 2.0cm 2.0cm; /* 上下左右2cm */
-              mso-header-margin: 35.4pt; 
-              mso-footer-margin: 35.4pt; 
-              mso-paper-source: 0; 
-          }
+          @page WordSection1 { size: 595.3pt 841.9pt; margin: 2.0cm 2.0cm 2.0cm 2.0cm; mso-header-margin: 35.4pt; mso-footer-margin: 35.4pt; mso-paper-source: 0; }
           div.WordSection1 { page: WordSection1; }
           body { font-family: 'Microsoft JhengHei', '微軟正黑體', sans-serif; font-size: 11pt; color: #333; line-height: 1.5; }
           h1 { color: #E83888; text-align: center; font-size: 20pt; margin-bottom: 20px; font-weight: bold; }
@@ -532,152 +474,70 @@ export default function App() {
           th, td { border: 1px solid #999; padding: 6px 8px; text-align: left; vertical-align: middle; }
           th { background-color: #f2f2f2; font-weight: bold; color: #000; }
           .highlight { color: #d9534f; font-weight: bold; }
-          ul { margin-top: 5px; }
-          li { margin-bottom: 5px; }
-          .text-center { text-align: center; }
-          .text-right { text-align: right; }
+          ul { margin-top: 5px; } li { margin-bottom: 5px; }
+          .text-center { text-align: center; } .text-right { text-align: right; }
         </style>
-      </head>
-      <body>
-        <div class='WordSection1'>
+      </head><body><div class='WordSection1'>
     `;
-
-    let content = `<h1>桃園市通學廊道專案進度報告</h1>`;
-    content += `<p style="text-align: right; color: #666;">產出日期：${currentDate}</p>`;
-
-    // 【1. 戰情儀錶板】
-    content += `
-      <h2>一、戰情儀錶板核心數據</h2>
-      <table>
-        <tr><th>指標</th><th>帳面數值</th><th>實際歸戶數值 (扣除衍生案/排除案)</th></tr>
+    let content = `<h1>桃園市通學廊道專案進度報告</h1><p style="text-align: right; color: #666;">產出日期：${currentDate}</p>`;
+    content += `<h2>一、戰情儀錶板核心數據</h2><table><tr><th>指標</th><th>帳面數值</th><th>實際歸戶數值 (扣除衍生案/排除案)</th></tr>
         <tr><td>總錄案</td><td>${kpis.total} 所</td><td class="highlight">${kpis.actualTotal} 所</td></tr>
         <tr><td>已完工</td><td>${kpis.completed} 所</td><td>${kpis.actualCompleted} 所</td></tr>
         <tr><td>施工中</td><td>${kpis.inProgress} 所</td><td>${kpis.actualInProgress} 所</td></tr>
         <tr><td>規劃中</td><td>${kpis.planning} 所</td><td>${kpis.actualPlanning} 所</td></tr>
-        <tr><td>總預算規模</td><td colspan="2" class="highlight">${kpis.totalBudget.toLocaleString()} 萬元</td></tr>
-      </table>
-    `;
-
-    // 【2. 中央補助案】
-    content += `
-      <h2>二、中央補助案概況 (已扣除不核定案件)</h2>
-      <ul>
+        <tr><td>總預算規模</td><td colspan="2" class="highlight">${kpis.totalBudget.toLocaleString()} 萬元</td></tr></table>`;
+    content += `<h2>二、中央補助案概況 (已扣除不核定案件)</h2><ul>
         <li><strong>國土署：</strong>共計 ${nlmaCases.length} 案，總經費 ${nlmaCases.reduce((s,p)=>s+(Number(p.budgetAmount)||0),0).toLocaleString()} 萬元。</li>
-        <li><strong>交通部公路局：</strong>共計 ${motcCases.length} 案，總經費 ${motcCases.reduce((s,p)=>s+(Number(p.budgetAmount)||0),0).toLocaleString()} 萬元。</li>
-      </ul>
-      <table>
-        <tr><th width="15%">行政區</th><th width="35%">案名</th><th width="20%">補助單位</th><th width="15%">經費(萬)</th><th width="15%">狀態</th></tr>
-        ${centralProjects.map(p => `
-          <tr>
-            <td class="text-center">${p.district}</td>
-            <td>${p.name}</td>
-            <td class="text-center">${p.budgetSource2}</td>
-            <td class="text-right">${Number(p.budgetAmount).toLocaleString()}</td>
-            <td class="text-center">${p.status}</td>
-          </tr>
-        `).join('')}
-      </table>
-    `;
-
-    // 【3. 學校總表】(為節省版面，印出實際列入的學校清單)
+        <li><strong>交通部公路局：</strong>共計 ${motcCases.length} 案，總經費 ${motcCases.reduce((s,p)=>s+(Number(p.budgetAmount)||0),0).toLocaleString()} 萬元。</li></ul>
+      <table><tr><th width="15%">行政區</th><th width="35%">案名</th><th width="20%">補助單位</th><th width="15%">經費(萬)</th><th width="15%">狀態</th></tr>
+        ${centralProjects.map(p => `<tr><td class="text-center">${p.district}</td><td>${p.name}</td><td class="text-center">${p.budgetSource2}</td><td class="text-right">${Number(p.budgetAmount).toLocaleString()}</td><td class="text-center">${p.status}</td></tr>`).join('')}</table>`;
     const validSchools = processedProjects.filter(p => !p.isExcluded);
-    content += `
-      <h2>三、學校總表 (實際納入計算清單)</h2>
-      <table>
-        <tr><th width="10%">項次</th><th width="15%">行政區</th><th width="35%">案名</th><th width="15%">狀態</th><th width="15%">經費(萬)</th></tr>
-        ${validSchools.map(p => `
-          <tr>
-            <td class="text-center">${p.itemNumber}</td>
-            <td class="text-center">${p.district}</td>
-            <td>${p.name}</td>
-            <td class="text-center">${p.status}</td>
-            <td class="text-right">${Number(p.budgetAmount).toLocaleString()}</td>
-          </tr>
-        `).join('')}
-      </table>
-    `;
-
-    // 【4. 115年度排程】
+    content += `<h2>三、學校總表 (實際納入計算清單)</h2><table><tr><th width="10%">項次</th><th width="15%">行政區</th><th width="35%">案名</th><th width="15%">狀態</th><th width="15%">經費(萬)</th></tr>
+        ${validSchools.map(p => `<tr><td class="text-center">${p.itemNumber}</td><td class="text-center">${p.district}</td><td>${p.name}</td><td class="text-center">${p.status}</td><td class="text-right">${Number(p.budgetAmount).toLocaleString()}</td></tr>`).join('')}</table>`;
     const scheduledProjects = projects.filter(p => p.scheduleMonth);
-    content += `
-      <h2>四、115年度施工排程</h2>
-      <table>
-        <tr><th width="15%">月份</th><th>預計進場案件</th></tr>
+    content += `<h2>四、115年度施工排程</h2><table><tr><th width="15%">月份</th><th>預計進場案件</th></tr>
         ${scheduleMonths.map(m => {
           const mProjs = scheduledProjects.filter(p => p.scheduleMonth === String(m));
-          return `
-            <tr>
-              <td class="text-center" style="font-weight:bold;">${m} 月</td>
-              <td>${mProjs.length > 0 ? mProjs.map(p => `[${p.district}] ${p.name}`).join('、 ') : '尚無排程'}</td>
-            </tr>
-          `;
-        }).join('')}
-      </table>
-    `;
+          return `<tr><td class="text-center" style="font-weight:bold;">${m} 月</td><td>${mProjs.length > 0 ? mProjs.map(p => `[${p.district}] ${p.name}`).join('、 ') : '尚無排程'}</td></tr>`;
+        }).join('')}</table>`;
 
     const footer = `</div></body></html>`;
-    const sourceHTML = header + content + footer;
-
-    // 將字串轉為 Blob 讓瀏覽器下載
-    const blob = new Blob(['\ufeff', sourceHTML], { type: 'application/msword' });
+    const blob = new Blob(['\ufeff', header + content + footer], { type: 'application/msword' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.href = url;
-    link.download = `桃園市通學廊道報表_${currentDate}.doc`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    link.href = url; link.download = `桃園市通學廊道報表_${currentDate}.doc`;
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
   };
-
 
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
-
     const reader = new FileReader();
     reader.onload = (event) => {
       const text = event.target.result;
       const lines = text.split('\n');
       const newProjects = [];
-      
       for (let i = 1; i < lines.length; i++) {
         const line = lines[i].trim();
         if (!line) continue;
         const cols = line.split(',');
         if (!cols[2] || cols[2].trim() === '') continue;
-
         newProjects.push({
-          id: cols[0] || Date.now().toString() + i,
-          district: cols[1],
-          name: cols[2],
-          level: cols[3] || determineLevel(cols[2]),
-          status: cols[4] || '規劃中',
-          budgetSource1: cols[5] || '',
-          budgetSource2: cols[6] || '',
-          budgetAmount: Number(cols[7]) || 0,
-          startDate: cleanDate(cols[8]),
-          endDate: cleanDate(cols[9]),
-          agency: cols[10] || '',
-          scheduleMonth: cols[11] || '',
-          isExcluded: cols[12] === 'Y',
-          isNotApproved: cols[13] === 'Y',
-          features: { pole: false, shelter: false, light: false, pickup: false }
+          id: cols[0] || Date.now().toString() + i, district: cols[1], name: cols[2], level: cols[3] || determineLevel(cols[2]),
+          status: cols[4] || '規劃中', budgetSource1: cols[5] || '', budgetSource2: cols[6] || '', budgetAmount: Number(cols[7]) || 0,
+          startDate: cleanDate(cols[8]), endDate: cleanDate(cols[9]), agency: cols[10] || '', scheduleMonth: cols[11] || '',
+          isExcluded: cols[12] === 'Y', isNotApproved: cols[13] === 'Y', features: { pole: false, shelter: false, light: false, pickup: false }
         });
       }
       if (newProjects.length > 0) {
-        setProjects(newProjects);
-        setIsDirty(true);
-        alert(`成功匯入 ${newProjects.length} 筆資料`);
+        setProjects(newProjects); setIsDirty(true); alert(`成功匯入 ${newProjects.length} 筆資料`);
       }
     };
     reader.readAsText(file);
     if(fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const saveChanges = () => {
-    setIsDirty(false);
-    alert('變更已儲存 (測試版僅儲存於記憶體，請使用匯出備份)');
-  };
+  const saveChanges = () => { setIsDirty(false); alert('變更已儲存 (測試版僅儲存於記憶體，請使用匯出備份)'); };
 
   // --- AI 特助 API 呼叫 ---
   const handleAiSubmit = async () => {
@@ -689,7 +549,15 @@ export default function App() {
     setIsAILoading(true);
 
     try {
-        const apiKey = ""; // API Key 透過環境自動注入
+        // API Key 取得邏輯：確保無論部署至何處，都能透過使用者設定注入金鑰
+        const apiKey = ""; // 預留給環境注入 (如 Canvas)
+        const activeKey = userApiKey || apiKey;
+
+        if (!activeKey) {
+             setAiMessages([...newMessages, { role: 'ai', content: '⚠️ 尚未偵測到 API Key。請先前往左側選單的「系統：報表匯出與設定」頁面，輸入您的 Gemini API Key 才能喚醒我喔！' }]);
+             setIsAILoading(false);
+             return;
+        }
         
         const systemPrompt = `你是一位專業的「桃園市通學廊道AI戰情特助」。請以繁體中文回答。
 你的主要任務是根據我提供的儀錶板資料，精準回答使用者的問題。如果遇到與資料無關的閒聊，請禮貌引導回專案管理。
@@ -702,7 +570,7 @@ export default function App() {
 - 實際歸戶學校數：${kpis.actualTotal} 所
 請針對使用者的提問給出清晰、有邏輯的分析。`;
 
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${activeKey}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -712,73 +580,44 @@ export default function App() {
         });
         
         const data = await response.json();
+        
+        if (data.error) {
+             throw new Error(data.error.message || "API 連線錯誤");
+        }
+
         const aiResponseText = data.candidates?.[0]?.content?.parts?.[0]?.text || "抱歉，系統目前忙碌中，請稍後再試。";
         setAiMessages([...newMessages, { role: 'ai', content: aiResponseText }]);
 
     } catch (error) {
-        setAiMessages([...newMessages, { role: 'ai', content: "連線發生異常，請檢查網路狀態或 API 設定。" }]);
+        console.error("AI Error:", error);
+        setAiMessages([...newMessages, { role: 'ai', content: `🚨 連線發生異常。請檢查您的網路狀態，或確認您在設定頁面輸入的 API Key 是否正確。\n(錯誤代碼: ${error.message})` }]);
     } finally {
         setIsAILoading(false);
     }
   };
 
 
-  // --- 子組件渲染 ---
   const renderDashboard = () => (
     <div className="space-y-6 animate-fade-in pb-20">
       <div className="bg-white p-6 rounded-xl shadow-sm border-l-4" style={{ borderColor: COLORS.primary }}>
         <h2 className="text-xl font-bold mb-4" style={{ color: COLORS.primary }}>錄案與經費概況</h2>
         <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-6">
-          <div className="bg-gray-50 p-4 rounded-lg text-center border relative overflow-hidden group">
-             <div className="absolute top-0 left-0 w-full h-1 bg-gray-300"></div>
-             <p className="text-sm text-gray-500">帳面錄案</p><p className="text-3xl font-bold">{kpis.total}</p>
-             <p className="text-xs text-gray-400 mt-2">總經費 {kpis.totalBudget.toLocaleString()} 萬</p>
-          </div>
-          <div className="bg-green-50 p-4 rounded-lg text-center border border-green-100 relative">
-             <div className="absolute top-0 left-0 w-full h-1 bg-green-500"></div>
-             <p className="text-sm text-green-600">已完工</p><p className="text-3xl font-bold text-green-700">{kpis.completed}</p>
-             <p className="text-xs text-green-600 mt-2">已投入 {kpis.completedBudget.toLocaleString()} 萬</p>
-          </div>
-          <div className="bg-blue-50 p-4 rounded-lg text-center border border-blue-100 relative">
-             <div className="absolute top-0 left-0 w-full h-1 bg-blue-500"></div>
-             <p className="text-sm text-blue-600">施工中</p><p className="text-3xl font-bold text-blue-700">{kpis.inProgress}</p>
-             <p className="text-xs text-blue-600 mt-2">執行中 {kpis.inProgressBudget.toLocaleString()} 萬</p>
-          </div>
-          <div className="bg-yellow-50 p-4 rounded-lg text-center border border-yellow-100 relative">
-             <div className="absolute top-0 left-0 w-full h-1 bg-yellow-400"></div>
-             <p className="text-sm text-yellow-600">規劃中</p><p className="text-3xl font-bold text-yellow-700">{kpis.planning}</p>
-             <p className="text-xs mt-2 text-transparent select-none">-</p>
-          </div>
-          <div className="bg-gray-100 p-4 rounded-lg text-center border border-gray-200">
-             <p className="text-sm text-gray-600">暫緩</p><p className="text-3xl font-bold text-gray-700">{kpis.paused}</p>
-             <p className="text-xs mt-2 text-transparent select-none">-</p>
-          </div>
-          <div className="bg-red-50 p-4 rounded-lg text-center border border-red-100">
-             <p className="text-sm text-red-600">視為重複案(含期數)</p><p className="text-3xl font-bold text-red-700">{kpis.duplicatedCount}</p>
-             <p className="text-xs mt-2 text-transparent select-none">-</p>
-          </div>
+          <div className="bg-gray-50 p-4 rounded-lg text-center border relative overflow-hidden group"><div className="absolute top-0 left-0 w-full h-1 bg-gray-300"></div><p className="text-sm text-gray-500">帳面錄案</p><p className="text-3xl font-bold">{kpis.total}</p><p className="text-xs text-gray-400 mt-2">總經費 {kpis.totalBudget.toLocaleString()} 萬</p></div>
+          <div className="bg-green-50 p-4 rounded-lg text-center border border-green-100 relative"><div className="absolute top-0 left-0 w-full h-1 bg-green-500"></div><p className="text-sm text-green-600">已完工</p><p className="text-3xl font-bold text-green-700">{kpis.completed}</p><p className="text-xs text-green-600 mt-2">已投入 {kpis.completedBudget.toLocaleString()} 萬</p></div>
+          <div className="bg-blue-50 p-4 rounded-lg text-center border border-blue-100 relative"><div className="absolute top-0 left-0 w-full h-1 bg-blue-500"></div><p className="text-sm text-blue-600">施工中</p><p className="text-3xl font-bold text-blue-700">{kpis.inProgress}</p><p className="text-xs text-blue-600 mt-2">執行中 {kpis.inProgressBudget.toLocaleString()} 萬</p></div>
+          <div className="bg-yellow-50 p-4 rounded-lg text-center border border-yellow-100 relative"><div className="absolute top-0 left-0 w-full h-1 bg-yellow-400"></div><p className="text-sm text-yellow-600">規劃中</p><p className="text-3xl font-bold text-yellow-700">{kpis.planning}</p><p className="text-xs mt-2 text-transparent select-none">-</p></div>
+          <div className="bg-gray-100 p-4 rounded-lg text-center border border-gray-200"><p className="text-sm text-gray-600">暫緩</p><p className="text-3xl font-bold text-gray-700">{kpis.paused}</p><p className="text-xs mt-2 text-transparent select-none">-</p></div>
+          <div className="bg-red-50 p-4 rounded-lg text-center border border-red-100"><p className="text-sm text-red-600">視為重複案</p><p className="text-3xl font-bold text-red-700">{kpis.duplicatedCount}</p><p className="text-xs mt-2 text-transparent select-none">-</p></div>
         </div>
 
         <div className="border-t border-gray-200 pt-4">
-            <h3 className="text-md font-bold mb-3 text-gray-700 flex items-center">
-                <Check className="w-5 h-5 mr-1 text-green-500"/> 實際歸戶學校進度 (排除期數衍生案與手動排除件)
-            </h3>
+            <h3 className="text-md font-bold mb-3 text-gray-700 flex items-center"><Check className="w-5 h-5 mr-1 text-green-500"/> 實際歸戶學校進度 (排除期數衍生案與手動排除件)</h3>
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            <div className="bg-gray-800 text-white p-3 rounded-lg text-center">
-                <p className="text-xs text-gray-300">實際學校數</p><p className="text-2xl font-bold">{kpis.actualTotal}</p>
-            </div>
-            <div className="bg-green-600 text-white p-3 rounded-lg text-center">
-                <p className="text-xs text-green-100">實際完工</p><p className="text-2xl font-bold">{kpis.actualCompleted}</p>
-            </div>
-            <div className="bg-blue-600 text-white p-3 rounded-lg text-center">
-                <p className="text-xs text-blue-100">實際施工</p><p className="text-2xl font-bold">{kpis.actualInProgress}</p>
-            </div>
-            <div className="bg-yellow-500 text-white p-3 rounded-lg text-center">
-                <p className="text-xs text-yellow-100">實際規劃</p><p className="text-2xl font-bold">{kpis.actualPlanning}</p>
-            </div>
-            <div className="bg-gray-500 text-white p-3 rounded-lg text-center">
-                <p className="text-xs text-gray-100">實際暫緩</p><p className="text-2xl font-bold">{kpis.actualPaused}</p>
-            </div>
+            <div className="bg-gray-800 text-white p-3 rounded-lg text-center"><p className="text-xs text-gray-300">實際學校數</p><p className="text-2xl font-bold">{kpis.actualTotal}</p></div>
+            <div className="bg-green-600 text-white p-3 rounded-lg text-center"><p className="text-xs text-green-100">實際完工</p><p className="text-2xl font-bold">{kpis.actualCompleted}</p></div>
+            <div className="bg-blue-600 text-white p-3 rounded-lg text-center"><p className="text-xs text-blue-100">實際施工</p><p className="text-2xl font-bold">{kpis.actualInProgress}</p></div>
+            <div className="bg-yellow-500 text-white p-3 rounded-lg text-center"><p className="text-xs text-yellow-100">實際規劃</p><p className="text-2xl font-bold">{kpis.actualPlanning}</p></div>
+            <div className="bg-gray-500 text-white p-3 rounded-lg text-center"><p className="text-xs text-gray-100">實際暫緩</p><p className="text-2xl font-bold">{kpis.actualPaused}</p></div>
             </div>
         </div>
       </div>
@@ -786,31 +625,11 @@ export default function App() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
           <h2 className="text-lg font-bold mb-4">預算來源分析 (單位: 萬元)</h2>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie data={kpis.budgetSourceData} cx="50%" cy="50%" outerRadius={80} fill="#8884d8" dataKey="value" label={({name, value, percent}) => `${name} ${value.toLocaleString()}萬 (${(percent * 100).toFixed(0)}%)`}>
-                  {kpis.budgetSourceData.map((entry, index) => <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />)}
-                </Pie>
-                <Tooltip formatter={(value) => [value.toLocaleString() + ' 萬', '經費']} />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
+          <div className="h-64"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={kpis.budgetSourceData} cx="50%" cy="50%" outerRadius={80} fill="#8884d8" dataKey="value" label={({name, value, percent}) => `${name} ${value.toLocaleString()}萬 (${(percent * 100).toFixed(0)}%)`}>{kpis.budgetSourceData.map((entry, index) => <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />)}</Pie><Tooltip formatter={(value) => [value.toLocaleString() + ' 萬', '經費']} /><Legend /></PieChart></ResponsiveContainer></div>
         </div>
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
           <h2 className="text-lg font-bold mb-4">中央單位補助佔比 (單位: 萬元)</h2>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie data={kpis.centralSourceData} cx="50%" cy="50%" outerRadius={80} fill="#8884d8" dataKey="value" label={({name, value, percent}) => `${name} ${value.toLocaleString()}萬 (${(percent * 100).toFixed(0)}%)`}>
-                  {kpis.centralSourceData.map((entry, index) => <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length + 2]} />)}
-                </Pie>
-                <Tooltip formatter={(value) => [value.toLocaleString() + ' 萬', '經費']} />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
+          <div className="h-64"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={kpis.centralSourceData} cx="50%" cy="50%" outerRadius={80} fill="#8884d8" dataKey="value" label={({name, value, percent}) => `${name} ${value.toLocaleString()}萬 (${(percent * 100).toFixed(0)}%)`}>{kpis.centralSourceData.map((entry, index) => <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length + 2]} />)}</Pie><Tooltip formatter={(value) => [value.toLocaleString() + ' 萬', '經費']} /><Legend /></PieChart></ResponsiveContainer></div>
         </div>
       </div>
 
@@ -819,30 +638,13 @@ export default function App() {
          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
             {kpis.districtCards.map(card => (
                 <div key={card.name} className={`p-4 rounded-xl border shadow-sm transition-transform hover:-translate-y-1 ${card.name === '全市總計' ? 'bg-pink-50 border-pink-200' : 'bg-white border-gray-200'}`}>
-                    <h3 className={`font-bold text-lg mb-3 pb-2 border-b ${card.name === '全市總計' ? 'text-pink-700 border-pink-200' : 'text-gray-800 border-gray-100'}`}>
-                        {card.name}
-                    </h3>
+                    <h3 className={`font-bold text-lg mb-3 pb-2 border-b ${card.name === '全市總計' ? 'text-pink-700 border-pink-200' : 'text-gray-800 border-gray-100'}`}>{card.name}</h3>
                     <div className="space-y-2">
-                        <div className="flex justify-between items-center text-sm">
-                            <span className="font-semibold text-gray-700">錄案: {card.actualTotal} 所</span>
-                            <span className="font-bold text-gray-800">{card.totalBudget.toLocaleString()} 萬</span>
-                        </div>
-                        <div className="flex justify-between items-center text-sm bg-green-50 px-2 py-1 rounded">
-                            <span className="text-green-700 font-medium">完工: {card.actualCompleted} 所</span>
-                            <span className="text-green-800 font-semibold">{card.completedBudget.toLocaleString()} 萬</span>
-                        </div>
-                        <div className="flex justify-between items-center text-sm bg-blue-50 px-2 py-1 rounded">
-                            <span className="text-blue-700 font-medium">施工: {card.actualInProgress} 所</span>
-                            <span className="text-blue-800 font-semibold">{card.inProgressBudget.toLocaleString()} 萬</span>
-                        </div>
-                        <div className="flex justify-between items-center text-sm bg-yellow-50 px-2 py-1 rounded">
-                            <span className="text-yellow-700 font-medium">規劃: {card.actualPlanning} 所</span>
-                            <span className="text-yellow-800 font-semibold">{card.planningBudget.toLocaleString()} 萬</span>
-                        </div>
-                        <div className="flex justify-between items-center text-sm bg-gray-50 px-2 py-1 rounded">
-                            <span className="text-gray-500 font-medium">暫緩: {card.actualPaused} 所</span>
-                            <span className="text-gray-600 font-semibold">{card.pausedBudget.toLocaleString()} 萬</span>
-                        </div>
+                        <div className="flex justify-between items-center text-sm"><span className="font-semibold text-gray-700">錄案: {card.actualTotal} 所</span><span className="font-bold text-gray-800">{card.totalBudget.toLocaleString()} 萬</span></div>
+                        <div className="flex justify-between items-center text-sm bg-green-50 px-2 py-1 rounded"><span className="text-green-700 font-medium">完工: {card.actualCompleted} 所</span><span className="text-green-800 font-semibold">{card.completedBudget.toLocaleString()} 萬</span></div>
+                        <div className="flex justify-between items-center text-sm bg-blue-50 px-2 py-1 rounded"><span className="text-blue-700 font-medium">施工: {card.actualInProgress} 所</span><span className="text-blue-800 font-semibold">{card.inProgressBudget.toLocaleString()} 萬</span></div>
+                        <div className="flex justify-between items-center text-sm bg-yellow-50 px-2 py-1 rounded"><span className="text-yellow-700 font-medium">規劃: {card.actualPlanning} 所</span><span className="text-yellow-800 font-semibold">{card.planningBudget.toLocaleString()} 萬</span></div>
+                        <div className="flex justify-between items-center text-sm bg-gray-50 px-2 py-1 rounded"><span className="text-gray-500 font-medium">暫緩: {card.actualPaused} 所</span><span className="text-gray-600 font-semibold">{card.pausedBudget.toLocaleString()} 萬</span></div>
                     </div>
                 </div>
             ))}
@@ -854,104 +656,42 @@ export default function App() {
   const renderCentral = () => {
     const centralProjects = projects.filter(p => p.budgetSource1 === '中央補助');
     const filtered = filterDist === 'All' ? centralProjects : centralProjects.filter(p => p.district === filterDist);
-
-    // 計算頂部統計 (扣除已被勾選為不核定的專案)
     const nlmaCases = filtered.filter(p => p.budgetSource2 === '國土署' && !p.isNotApproved);
     const nlmaBudget = nlmaCases.reduce((sum, p) => sum + (Number(p.budgetAmount) || 0), 0);
-
     const motcCases = filtered.filter(p => p.budgetSource2 === '公路局' && !p.isNotApproved);
     const motcBudget = motcCases.reduce((sum, p) => sum + (Number(p.budgetAmount) || 0), 0);
 
     return (
       <div className="bg-white p-6 rounded-xl shadow-sm animate-fade-in pb-20">
         <div className="flex justify-between items-center mb-6 border-b pb-4">
-            <div>
-                <h2 className="text-xl font-bold flex items-center" style={{ color: COLORS.techBlue }}>
-                    <Building2 className="w-6 h-6 mr-2"/> 中央補助專案管理
-                </h2>
-                <p className="text-sm text-gray-500 mt-1">勾選「不核定」將自動自上方統計與預算中扣除。</p>
-            </div>
-            <select className="border-2 border-blue-200 p-2 rounded-lg font-bold outline-none focus:ring-2 focus:ring-blue-300" value={filterDist} onChange={e => setFilterDist(e.target.value)}>
-                <option value="All">所有行政區篩選</option>
-                {DISTRICTS.map(d => <option key={d} value={d}>{d}</option>)}
-            </select>
+            <div><h2 className="text-xl font-bold flex items-center" style={{ color: COLORS.techBlue }}><Building2 className="w-6 h-6 mr-2"/> 中央補助專案管理</h2><p className="text-sm text-gray-500 mt-1">勾選「不核定」將自動自上方統計與預算中扣除。</p></div>
+            <select className="border-2 border-blue-200 p-2 rounded-lg font-bold outline-none focus:ring-2 focus:ring-blue-300" value={filterDist} onChange={e => setFilterDist(e.target.value)}><option value="All">所有行政區篩選</option>{DISTRICTS.map(d => <option key={d} value={d}>{d}</option>)}</select>
         </div>
-
-        {/* --- 中央補助統計卡片 --- */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
             <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 p-5 rounded-xl shadow-sm flex justify-between items-center">
-                <div>
-                    <h3 className="text-blue-800 font-bold text-lg mb-1">國土署 (核定有效案件)</h3>
-                    <p className="text-blue-600 text-sm">已排除不核定案件</p>
-                </div>
-                <div className="text-right">
-                    <p className="text-3xl font-black text-blue-900">{nlmaCases.length} <span className="text-lg font-normal">案</span></p>
-                    <p className="text-blue-700 font-mono font-bold mt-1">經費: {nlmaBudget.toLocaleString()} 萬元</p>
-                </div>
+                <div><h3 className="text-blue-800 font-bold text-lg mb-1">國土署 (核定有效案件)</h3><p className="text-blue-600 text-sm">已排除不核定案件</p></div>
+                <div className="text-right"><p className="text-3xl font-black text-blue-900">{nlmaCases.length} <span className="text-lg font-normal">案</span></p><p className="text-blue-700 font-mono font-bold mt-1">經費: {nlmaBudget.toLocaleString()} 萬元</p></div>
             </div>
             <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 p-5 rounded-xl shadow-sm flex justify-between items-center">
-                <div>
-                    <h3 className="text-emerald-800 font-bold text-lg mb-1">交通部/公路局 (核定有效案件)</h3>
-                    <p className="text-emerald-600 text-sm">已排除不核定案件</p>
-                </div>
-                <div className="text-right">
-                    <p className="text-3xl font-black text-emerald-900">{motcCases.length} <span className="text-lg font-normal">案</span></p>
-                    <p className="text-emerald-700 font-mono font-bold mt-1">經費: {motcBudget.toLocaleString()} 萬元</p>
-                </div>
+                <div><h3 className="text-emerald-800 font-bold text-lg mb-1">交通部/公路局 (核定有效案件)</h3><p className="text-emerald-600 text-sm">已排除不核定案件</p></div>
+                <div className="text-right"><p className="text-3xl font-black text-emerald-900">{motcCases.length} <span className="text-lg font-normal">案</span></p><p className="text-emerald-700 font-mono font-bold mt-1">經費: {motcBudget.toLocaleString()} 萬元</p></div>
             </div>
         </div>
-        
         <div className="overflow-x-auto border rounded-lg shadow-inner">
           <table className="w-full text-sm text-left border-collapse min-w-[1000px]">
             <thead className="bg-gray-100 text-gray-700 uppercase">
               <tr>
                 <th className="p-3 border text-center text-red-600 font-bold w-20">不核定<br/><span className="text-[10px] text-gray-500 font-normal">(打勾排除)</span></th>
-                <th className="p-3 border">行政區</th>
-                <th className="p-3 border">計畫/學校名稱</th>
-                <th className="p-3 border">補助單位</th>
-                <th className="p-3 border text-right">提案/核定經費(萬)</th>
-                <th className="p-3 border">執行進度</th>
-                <th className="p-3 border">四大亮點指標 (勾選)</th>
+                <th className="p-3 border">行政區</th><th className="p-3 border">計畫/學校名稱</th><th className="p-3 border">補助單位</th><th className="p-3 border text-right">提案/核定經費(萬)</th><th className="p-3 border">執行進度</th><th className="p-3 border">四大亮點指標 (勾選)</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map(p => (
                 <tr key={p.id} className={`border-b transition-colors ${p.isNotApproved ? 'bg-gray-100 opacity-60' : 'hover:bg-blue-50'}`}>
-                  <td className="p-3 border text-center" onClick={() => handleToggleNotApproved(p.id)}>
-                      <div className="flex justify-center cursor-pointer">
-                          {p.isNotApproved ? <CheckSquare className="w-6 h-6 text-red-500 drop-shadow-md"/> : <Square className="w-6 h-6 text-gray-300 hover:text-red-300"/>}
-                      </div>
-                  </td>
-                  <td className="p-3 border font-medium text-gray-700">{p.district}</td>
-                  <td className={`p-3 border font-bold ${p.isNotApproved ? 'line-through text-gray-500' : 'text-blue-800'}`}>{p.name}</td>
-                  <td className="p-3 border">{p.budgetSource2}</td>
-                  <td className={`p-3 border text-right font-mono font-bold ${p.isNotApproved ? 'text-gray-500' : 'text-pink-600'}`}>{p.budgetAmount.toLocaleString()}</td>
-                  <td className="p-3 border">
-                    <span className={`px-2 py-1 rounded-full text-xs font-semibold 
-                        ${p.status === '已完工' ? 'bg-green-100 text-green-700' : p.status === '施工中' ? 'bg-blue-100 text-blue-700' : 'bg-gray-200'}`}>
-                        {p.status}
-                    </span>
-                  </td>
-                  <td className="p-3 border">
-                     <div className="flex space-x-3 opacity-90">
-                        <label className="flex items-center space-x-1 cursor-pointer" onClick={() => handleFeatureToggle(p.id, 'pole')}>
-                            {p.features?.pole ? <CheckSquare className="w-4 h-4 text-blue-600"/> : <Square className="w-4 h-4 text-gray-400"/>}
-                            <span className="text-xs">電桿地下</span>
-                        </label>
-                        <label className="flex items-center space-x-1 cursor-pointer" onClick={() => handleFeatureToggle(p.id, 'shelter')}>
-                            {p.features?.shelter ? <CheckSquare className="w-4 h-4 text-blue-600"/> : <Square className="w-4 h-4 text-gray-400"/>}
-                            <span className="text-xs">候車亭</span>
-                        </label>
-                        <label className="flex items-center space-x-1 cursor-pointer" onClick={() => handleFeatureToggle(p.id, 'light')}>
-                            {p.features?.light ? <CheckSquare className="w-4 h-4 text-blue-600"/> : <Square className="w-4 h-4 text-gray-400"/>}
-                            <span className="text-xs">雙色溫路燈</span>
-                        </label>
-                        <label className="flex items-center space-x-1 cursor-pointer" onClick={() => handleFeatureToggle(p.id, 'pickup')}>
-                            {p.features?.pickup ? <CheckSquare className="w-4 h-4 text-blue-600"/> : <Square className="w-4 h-4 text-gray-400"/>}
-                            <span className="text-xs">接送區</span>
-                        </label>
-                     </div>
-                  </td>
+                  <td className="p-3 border text-center" onClick={() => handleToggleNotApproved(p.id)}><div className="flex justify-center cursor-pointer">{p.isNotApproved ? <CheckSquare className="w-6 h-6 text-red-500 drop-shadow-md"/> : <Square className="w-6 h-6 text-gray-300 hover:text-red-300"/>}</div></td>
+                  <td className="p-3 border font-medium text-gray-700">{p.district}</td><td className={`p-3 border font-bold ${p.isNotApproved ? 'line-through text-gray-500' : 'text-blue-800'}`}>{p.name}</td><td className="p-3 border">{p.budgetSource2}</td><td className={`p-3 border text-right font-mono font-bold ${p.isNotApproved ? 'text-gray-500' : 'text-pink-600'}`}>{p.budgetAmount.toLocaleString()}</td>
+                  <td className="p-3 border"><span className={`px-2 py-1 rounded-full text-xs font-semibold ${p.status === '已完工' ? 'bg-green-100 text-green-700' : p.status === '施工中' ? 'bg-blue-100 text-blue-700' : 'bg-gray-200'}`}>{p.status}</span></td>
+                  <td className="p-3 border"><div className="flex space-x-3 opacity-90"><label className="flex items-center space-x-1 cursor-pointer" onClick={() => handleFeatureToggle(p.id, 'pole')}>{p.features?.pole ? <CheckSquare className="w-4 h-4 text-blue-600"/> : <Square className="w-4 h-4 text-gray-400"/>}<span className="text-xs">電桿地下</span></label><label className="flex items-center space-x-1 cursor-pointer" onClick={() => handleFeatureToggle(p.id, 'shelter')}>{p.features?.shelter ? <CheckSquare className="w-4 h-4 text-blue-600"/> : <Square className="w-4 h-4 text-gray-400"/>}<span className="text-xs">候車亭</span></label><label className="flex items-center space-x-1 cursor-pointer" onClick={() => handleFeatureToggle(p.id, 'light')}>{p.features?.light ? <CheckSquare className="w-4 h-4 text-blue-600"/> : <Square className="w-4 h-4 text-gray-400"/>}<span className="text-xs">雙色溫路燈</span></label><label className="flex items-center space-x-1 cursor-pointer" onClick={() => handleFeatureToggle(p.id, 'pickup')}>{p.features?.pickup ? <CheckSquare className="w-4 h-4 text-blue-600"/> : <Square className="w-4 h-4 text-gray-400"/>}<span className="text-xs">接送區</span></label></div></td>
                 </tr>
               ))}
               {filtered.length === 0 && <tr><td colSpan="7" className="text-center p-8 text-gray-500 font-bold">此區目前無中央補助案件</td></tr>}
@@ -968,93 +708,37 @@ export default function App() {
         <div className="flex justify-between items-center mb-4 flex-shrink-0">
             <h2 className="text-xl font-bold text-gray-800">學校總表資料庫 (點擊名稱可編輯)</h2>
             <div className="flex items-center space-x-4">
-                <select className="border-2 border-pink-200 p-2 rounded-lg text-sm font-bold focus:ring-2 focus:ring-pink-300 outline-none" value={schoolDistrictFilter} onChange={e => setSchoolDistrictFilter(e.target.value)}>
-                    <option value="All">全市所有行政區</option>
-                    {DISTRICTS.map(d => <option key={d} value={d}>{d}</option>)}
-                </select>
-                <div className="text-sm text-pink-700 bg-pink-50 px-3 py-1 rounded-full font-bold border border-pink-100">
-                    顯示 {displayProjects.length} 筆資料
-                </div>
+                <select className="border-2 border-pink-200 p-2 rounded-lg text-sm font-bold focus:ring-2 focus:ring-pink-300 outline-none" value={schoolDistrictFilter} onChange={e => setSchoolDistrictFilter(e.target.value)}><option value="All">全市所有行政區</option>{DISTRICTS.map(d => <option key={d} value={d}>{d}</option>)}</select>
+                <div className="text-sm text-pink-700 bg-pink-50 px-3 py-1 rounded-full font-bold border border-pink-100">顯示 {displayProjects.length} 筆資料</div>
             </div>
         </div>
 
-        {/* --- 篩選結果的實際狀態統計卡片 (改為互動式下鑽按鈕) --- */}
-        <div className="text-xs text-gray-500 mb-2 flex items-center">
-            <Filter className="w-3 h-3 mr-1"/> 提示：點擊下方卡片，可直接篩選該狀態的學校清單
-        </div>
+        <div className="text-xs text-gray-500 mb-2 flex items-center"><Filter className="w-3 h-3 mr-1"/> 提示：點擊下方卡片，可直接篩選該狀態的學校清單</div>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4 flex-shrink-0">
-            <div onClick={() => setTableStatusFilter('All')} 
-                 className={`p-3 rounded-lg text-center shadow-sm cursor-pointer transition-all transform hover:scale-105 border-2 ${tableStatusFilter === 'All' ? 'bg-gray-800 text-white border-gray-900 ring-2 ring-offset-2 ring-gray-300' : 'bg-gray-100 text-gray-600 border-transparent hover:bg-gray-200'}`}>
-                <div className="text-xs opacity-80 font-medium mb-1">實際錄案數 (顯示全部)</div>
-                <div className="text-2xl font-black">{tableStats.actualTotal}</div>
-            </div>
-            
-            <div onClick={() => setTableStatusFilter('已完工')} 
-                 className={`p-3 rounded-lg text-center shadow-sm cursor-pointer transition-all transform hover:scale-105 border-2 ${tableStatusFilter === '已完工' ? 'bg-green-600 text-white border-green-700 ring-2 ring-offset-2 ring-green-300' : 'bg-green-50 text-green-800 border-green-200 hover:bg-green-100'}`}>
-                <div className="text-xs opacity-90 font-bold mb-1">實際完工</div>
-                <div className="text-2xl font-black">{tableStats.actualCompleted}</div>
-            </div>
-            
-            <div onClick={() => setTableStatusFilter('施工中')} 
-                 className={`p-3 rounded-lg text-center shadow-sm cursor-pointer transition-all transform hover:scale-105 border-2 ${tableStatusFilter === '施工中' ? 'bg-blue-600 text-white border-blue-700 ring-2 ring-offset-2 ring-blue-300' : 'bg-blue-50 text-blue-800 border-blue-200 hover:bg-blue-100'}`}>
-                <div className="text-xs opacity-90 font-bold mb-1">實際施工</div>
-                <div className="text-2xl font-black">{tableStats.actualInProgress}</div>
-            </div>
-            
-            <div onClick={() => setTableStatusFilter('規劃中')} 
-                 className={`p-3 rounded-lg text-center shadow-sm cursor-pointer transition-all transform hover:scale-105 border-2 ${tableStatusFilter === '規劃中' ? 'bg-yellow-500 text-white border-yellow-600 ring-2 ring-offset-2 ring-yellow-300' : 'bg-yellow-50 text-yellow-800 border-yellow-200 hover:bg-yellow-100'}`}>
-                <div className="text-xs opacity-90 font-bold mb-1">實際規劃</div>
-                <div className="text-2xl font-black">{tableStats.actualPlanning}</div>
-            </div>
-            
-            <div onClick={() => setTableStatusFilter('暫緩')} 
-                 className={`p-3 rounded-lg text-center shadow-sm cursor-pointer transition-all transform hover:scale-105 border-2 ${tableStatusFilter === '暫緩' ? 'bg-gray-500 text-white border-gray-600 ring-2 ring-offset-2 ring-gray-300' : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'}`}>
-                <div className="text-xs opacity-90 font-bold mb-1">實際暫緩</div>
-                <div className="text-2xl font-black">{tableStats.actualPaused}</div>
-            </div>
+            <div onClick={() => setTableStatusFilter('All')} className={`p-3 rounded-lg text-center shadow-sm cursor-pointer transition-all transform hover:scale-105 border-2 ${tableStatusFilter === 'All' ? 'bg-gray-800 text-white border-gray-900 ring-2 ring-offset-2 ring-gray-300' : 'bg-gray-100 text-gray-600 border-transparent hover:bg-gray-200'}`}><div className="text-xs opacity-80 font-medium mb-1">實際錄案數 (顯示全部)</div><div className="text-2xl font-black">{tableStats.actualTotal}</div></div>
+            <div onClick={() => setTableStatusFilter('已完工')} className={`p-3 rounded-lg text-center shadow-sm cursor-pointer transition-all transform hover:scale-105 border-2 ${tableStatusFilter === '已完工' ? 'bg-green-600 text-white border-green-700 ring-2 ring-offset-2 ring-green-300' : 'bg-green-50 text-green-800 border-green-200 hover:bg-green-100'}`}><div className="text-xs opacity-90 font-bold mb-1">實際完工</div><div className="text-2xl font-black">{tableStats.actualCompleted}</div></div>
+            <div onClick={() => setTableStatusFilter('施工中')} className={`p-3 rounded-lg text-center shadow-sm cursor-pointer transition-all transform hover:scale-105 border-2 ${tableStatusFilter === '施工中' ? 'bg-blue-600 text-white border-blue-700 ring-2 ring-offset-2 ring-blue-300' : 'bg-blue-50 text-blue-800 border-blue-200 hover:bg-blue-100'}`}><div className="text-xs opacity-90 font-bold mb-1">實際施工</div><div className="text-2xl font-black">{tableStats.actualInProgress}</div></div>
+            <div onClick={() => setTableStatusFilter('規劃中')} className={`p-3 rounded-lg text-center shadow-sm cursor-pointer transition-all transform hover:scale-105 border-2 ${tableStatusFilter === '規劃中' ? 'bg-yellow-500 text-white border-yellow-600 ring-2 ring-offset-2 ring-yellow-300' : 'bg-yellow-50 text-yellow-800 border-yellow-200 hover:bg-yellow-100'}`}><div className="text-xs opacity-90 font-bold mb-1">實際規劃</div><div className="text-2xl font-black">{tableStats.actualPlanning}</div></div>
+            <div onClick={() => setTableStatusFilter('暫緩')} className={`p-3 rounded-lg text-center shadow-sm cursor-pointer transition-all transform hover:scale-105 border-2 ${tableStatusFilter === '暫緩' ? 'bg-gray-500 text-white border-gray-600 ring-2 ring-offset-2 ring-gray-300' : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'}`}><div className="text-xs opacity-90 font-bold mb-1">實際暫緩</div><div className="text-2xl font-black">{tableStats.actualPaused}</div></div>
         </div>
 
         <div className="overflow-x-auto overflow-y-auto flex-1 border rounded shadow-inner bg-white">
             <table className="w-full text-sm text-left relative min-w-[1200px]">
                 <thead className="bg-gray-100 text-gray-700 sticky top-0 z-10 shadow-sm uppercase text-xs">
                     <tr>
-                        <th className="p-3 border-r w-16 text-center">項次</th>
-                        <th className="p-3 border-r w-24 text-center">排除計算<br/><span className="text-[10px] text-gray-500 font-normal">(不歸戶)</span></th>
-                        <th className="p-3 border-r">行政區</th>
-                        <th className="p-3 border-r">層級</th>
-                        <th className="p-3 border-r">案名(學校)</th>
-                        <th className="p-3 border-r">狀態</th>
-                        <th className="p-3 border-r">預算大項</th>
-                        <th className="p-3 border-r">細項</th>
-                        <th className="p-3 border-r text-right">經費(萬)</th>
-                        <th className="p-3 border-r">機關</th>
-                        <th className="p-3 text-center">操作</th>
+                        <th className="p-3 border-r w-16 text-center">項次</th><th className="p-3 border-r w-24 text-center">排除計算<br/><span className="text-[10px] text-gray-500 font-normal">(不歸戶)</span></th><th className="p-3 border-r">行政區</th><th className="p-3 border-r">層級</th><th className="p-3 border-r">案名(學校)</th><th className="p-3 border-r">狀態</th><th className="p-3 border-r">預算大項</th><th className="p-3 border-r">細項</th><th className="p-3 border-r text-right">經費(萬)</th><th className="p-3 border-r">機關</th><th className="p-3 text-center">操作</th>
                     </tr>
                 </thead>
                 <tbody className="divide-y">
                     {displayProjects.map(p => (
                         <tr key={p.id} className={`hover:bg-pink-50 transition-colors ${p.isExcluded ? 'bg-gray-50 opacity-50' : ''}`}>
                             <td className="p-2 text-center font-mono font-bold text-gray-500 bg-gray-50">{p.itemNumber}</td>
-                            <td className="p-2 text-center" onClick={() => handleToggleExclude(p.id)}>
-                                <div className="flex items-center justify-center cursor-pointer" title="勾選後，將不列入上方的實際統計數">
-                                    {p.isExcluded ? <CheckSquare className="w-5 h-5 text-red-500 drop-shadow-sm"/> : <Square className="w-5 h-5 text-gray-300 hover:text-red-300"/>}
-                                </div>
-                            </td>
-                            <td className="p-2">{p.district}</td>
-                            <td className="p-2 text-xs text-gray-500">{p.level}</td>
-                            <td className="p-2 font-medium text-blue-600 cursor-pointer hover:underline" onClick={() => setSelectedProject(p)}>
-                                {p.name} {isDuplicateName(p.name) && <span className="ml-1 text-[10px] bg-red-100 text-red-600 px-1 rounded inline-block">衍生案</span>}
-                            </td>
-                            <td className="p-2">
-                                <span className={p.status === '已完工' ? 'text-green-600 font-bold bg-green-50 px-2 py-1 rounded' : p.status === '暫緩' ? 'text-gray-400' : ''}>{p.status}</span>
-                            </td>
-                            <td className="p-2">{p.budgetSource1}</td>
-                            <td className="p-2 text-xs text-gray-500">{p.budgetSource2}</td>
-                            <td className="p-2 text-right font-mono font-bold text-gray-700">{p.budgetAmount.toLocaleString()}</td>
-                            <td className="p-2 text-xs text-gray-600">{p.agency}</td>
-                            <td className="p-2 text-center text-blue-500 cursor-pointer hover:text-blue-700" onClick={() => setSelectedProject(p)}>
-                                <Edit className="w-4 h-4 mx-auto"/>
-                            </td>
+                            <td className="p-2 text-center" onClick={() => handleToggleExclude(p.id)}><div className="flex items-center justify-center cursor-pointer" title="勾選後，將不列入上方的實際統計數">{p.isExcluded ? <CheckSquare className="w-5 h-5 text-red-500 drop-shadow-sm"/> : <Square className="w-5 h-5 text-gray-300 hover:text-red-300"/>}</div></td>
+                            <td className="p-2">{p.district}</td><td className="p-2 text-xs text-gray-500">{p.level}</td>
+                            <td className="p-2 font-medium text-blue-600 cursor-pointer hover:underline" onClick={() => setSelectedProject(p)}>{p.name} {isDuplicateName(p.name) && <span className="ml-1 text-[10px] bg-red-100 text-red-600 px-1 rounded inline-block">衍生案</span>}</td>
+                            <td className="p-2"><span className={p.status === '已完工' ? 'text-green-600 font-bold bg-green-50 px-2 py-1 rounded' : p.status === '暫緩' ? 'text-gray-400' : ''}>{p.status}</span></td>
+                            <td className="p-2">{p.budgetSource1}</td><td className="p-2 text-xs text-gray-500">{p.budgetSource2}</td><td className="p-2 text-right font-mono font-bold text-gray-700">{p.budgetAmount.toLocaleString()}</td><td className="p-2 text-xs text-gray-600">{p.agency}</td>
+                            <td className="p-2 text-center text-blue-500 cursor-pointer hover:text-blue-700" onClick={() => setSelectedProject(p)}><Edit className="w-4 h-4 mx-auto"/></td>
                         </tr>
                     ))}
                     {displayProjects.length === 0 && <tr><td colSpan="11" className="text-center p-12 text-gray-400 font-bold bg-gray-50">此篩選條件下無符合之專案資料</td></tr>}
@@ -1062,91 +746,36 @@ export default function App() {
             </table>
         </div>
 
-        {/* 編輯卡片 Modal */}
         {selectedProject && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 animate-fade-in">
                 <div className="bg-white w-[600px] rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-                    <div className="bg-gradient-to-r from-pink-500 to-rose-500 p-4 text-white flex justify-between items-center">
-                        <h3 className="font-bold text-lg flex items-center"><Building2 className="mr-2"/> 個案詳細資訊卡</h3>
-                        <button onClick={() => setSelectedProject(null)} className="text-white hover:text-gray-200 transition-transform hover:scale-110">
-                            <X className="w-6 h-6" />
-                        </button>
-                    </div>
-                    
+                    <div className="bg-gradient-to-r from-pink-500 to-rose-500 p-4 text-white flex justify-between items-center"><h3 className="font-bold text-lg flex items-center"><Building2 className="mr-2"/> 個案詳細資訊卡</h3><button onClick={() => setSelectedProject(null)} className="text-white hover:text-gray-200 transition-transform hover:scale-110"><X className="w-6 h-6" /></button></div>
                     <div className="p-6 overflow-y-auto flex-1 space-y-4">
                         <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <label className="block text-xs text-gray-500 mb-1">案名(學校)</label>
-                                <input type="text" className="w-full border p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none" value={selectedProject.name} onChange={e => handleUpdateProject(selectedProject.id, 'name', e.target.value)} />
-                            </div>
-                            <div>
-                                <label className="block text-xs text-gray-500 mb-1">Google定位</label>
-                                <a href={`https://www.google.com/maps/search/?api=1&query=${selectedProject.district}${selectedProject.name}`} target="_blank" rel="noreferrer" className="flex items-center justify-center h-[42px] text-blue-500 border p-2 rounded hover:bg-blue-50 transition-colors font-bold">
-                                    <MapPin className="w-4 h-4 mr-2"/> 開啟地圖搜尋
-                                </a>
-                            </div>
-                            <div>
-                                <label className="block text-xs text-gray-500 mb-1">行政區</label>
-                                <select className="w-full border p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none" value={selectedProject.district} onChange={e => handleUpdateProject(selectedProject.id, 'district', e.target.value)}>
-                                    {DISTRICTS.map(d => <option key={d} value={d}>{d}</option>)}
-                                </select>
-                            </div>
-                             <div>
-                                <label className="block text-xs text-gray-500 mb-1">層級</label>
-                                <select className="w-full border p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none" value={selectedProject.level} onChange={e => handleUpdateProject(selectedProject.id, 'level', e.target.value)}>
-                                    {LEVELS.map(l => <option key={l} value={l}>{l}</option>)}
-                                </select>
-                            </div>
-                             <div>
-                                <label className="block text-xs text-gray-500 mb-1">執行狀態</label>
-                                <select className="w-full border p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none font-bold text-blue-700" value={selectedProject.status} onChange={e => handleUpdateProject(selectedProject.id, 'status', e.target.value)}>
-                                    {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                                </select>
-                            </div>
-                            <div>
-                                <label className="block text-xs text-gray-500 mb-1">機關</label>
-                                <input type="text" className="w-full border p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none" value={selectedProject.agency} onChange={e => handleUpdateProject(selectedProject.id, 'agency', e.target.value)} />
-                            </div>
+                            <div><label className="block text-xs text-gray-500 mb-1">案名(學校)</label><input type="text" className="w-full border p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none" value={selectedProject.name} onChange={e => handleUpdateProject(selectedProject.id, 'name', e.target.value)} /></div>
+                            <div><label className="block text-xs text-gray-500 mb-1">Google定位</label><a href={`https://www.google.com/maps/search/?api=1&query=${selectedProject.district}${selectedProject.name}`} target="_blank" rel="noreferrer" className="flex items-center justify-center h-[42px] text-blue-500 border p-2 rounded hover:bg-blue-50 transition-colors font-bold"><MapPin className="w-4 h-4 mr-2"/> 開啟地圖搜尋</a></div>
+                            <div><label className="block text-xs text-gray-500 mb-1">行政區</label><select className="w-full border p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none" value={selectedProject.district} onChange={e => handleUpdateProject(selectedProject.id, 'district', e.target.value)}>{DISTRICTS.map(d => <option key={d} value={d}>{d}</option>)}</select></div>
+                             <div><label className="block text-xs text-gray-500 mb-1">層級</label><select className="w-full border p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none" value={selectedProject.level} onChange={e => handleUpdateProject(selectedProject.id, 'level', e.target.value)}>{LEVELS.map(l => <option key={l} value={l}>{l}</option>)}</select></div>
+                             <div><label className="block text-xs text-gray-500 mb-1">執行狀態</label><select className="w-full border p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none font-bold text-blue-700" value={selectedProject.status} onChange={e => handleUpdateProject(selectedProject.id, 'status', e.target.value)}>{STATUSES.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
+                            <div><label className="block text-xs text-gray-500 mb-1">機關</label><input type="text" className="w-full border p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none" value={selectedProject.agency} onChange={e => handleUpdateProject(selectedProject.id, 'agency', e.target.value)} /></div>
                         </div>
-
                         <div className="border-t pt-4 grid grid-cols-2 gap-4">
                             <div>
                                 <label className="block text-xs text-gray-500 mb-1">預算來源</label>
-                                <select className="w-full border p-2 rounded mb-2 focus:ring-2 focus:ring-pink-300 outline-none font-bold" value={selectedProject.budgetSource1} onChange={e => handleUpdateProject(selectedProject.id, 'budgetSource1', e.target.value)}>
-                                    <option value="">選擇來源</option>
-                                    <option value="市府預算">市府預算</option>
-                                    <option value="中央補助">中央補助</option>
-                                </select>
+                                <select className="w-full border p-2 rounded mb-2 focus:ring-2 focus:ring-pink-300 outline-none font-bold" value={selectedProject.budgetSource1} onChange={e => handleUpdateProject(selectedProject.id, 'budgetSource1', e.target.value)}><option value="">選擇來源</option><option value="市府預算">市府預算</option><option value="中央補助">中央補助</option></select>
                                 <select className="w-full border p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none" value={selectedProject.budgetSource2} onChange={e => handleUpdateProject(selectedProject.id, 'budgetSource2', e.target.value)}>
                                      <option value="">細項(公務/國土/公路等)</option>
-                                    {selectedProject.budgetSource1 === '市府預算' ? (
-                                        <>
-                                            <option value="公務預算">公務預算</option>
-                                            <option value="道路基金">道路基金</option>
-                                            <option value="其他基金">其他基金</option>
-                                            <option value="統籌分配">統籌分配</option>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <option value="國土署">國土署</option>
-                                            <option value="公路局">公路局</option>
-                                        </>
-                                    )}
+                                    {selectedProject.budgetSource1 === '市府預算' ? (<><option value="公務預算">公務預算</option><option value="道路基金">道路基金</option><option value="其他基金">其他基金</option><option value="統籌分配">統籌分配</option></>) : (<><option value="國土署">國土署</option><option value="公路局">公路局</option></>)}
                                 </select>
                             </div>
                             <div>
                                 <label className="block text-xs text-gray-500 mb-1">總經費(萬元)</label>
                                 <input type="number" className="w-full border p-2 rounded mb-2 focus:ring-2 focus:ring-pink-300 outline-none font-mono font-bold text-pink-600" value={selectedProject.budgetAmount} onChange={e => handleUpdateProject(selectedProject.id, 'budgetAmount', Number(e.target.value))} />
-                                <div className="border-2 border-dashed border-pink-200 rounded-lg p-4 flex flex-col items-center justify-center text-pink-400 cursor-pointer hover:bg-pink-50 hover:border-pink-400 transition-colors">
-                                    <ImageIcon className="w-6 h-6 mb-1"/>
-                                    <span className="text-xs font-bold">上傳現況照片</span>
-                                </div>
+                                <div className="border-2 border-dashed border-pink-200 rounded-lg p-4 flex flex-col items-center justify-center text-pink-400 cursor-pointer hover:bg-pink-50 hover:border-pink-400 transition-colors"><ImageIcon className="w-6 h-6 mb-1"/><span className="text-xs font-bold">上傳現況照片</span></div>
                             </div>
                         </div>
                     </div>
-                    <div className="p-4 border-t bg-gray-50 flex justify-end">
-                        <button className="px-6 py-2 bg-pink-500 text-white font-bold rounded-lg shadow-md hover:bg-pink-600 hover:shadow-lg transition-all" onClick={() => setSelectedProject(null)}>完成儲存</button>
-                    </div>
+                    <div className="p-4 border-t bg-gray-50 flex justify-end"><button className="px-6 py-2 bg-pink-500 text-white font-bold rounded-lg shadow-md hover:bg-pink-600 hover:shadow-lg transition-all" onClick={() => setSelectedProject(null)}>完成儲存</button></div>
                 </div>
             </div>
         )}
@@ -1162,12 +791,7 @@ export default function App() {
      return (
         <div className="bg-white p-6 rounded-xl shadow-sm h-full flex flex-col animate-fade-in pb-20">
             <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center"><Calendar className="mr-2"/> 115年度施工排程總表</h2>
-            
-            <div className="mb-4 bg-yellow-50 p-3 rounded border border-yellow-200 text-sm flex items-center">
-                <AlertCircle className="w-4 h-4 text-yellow-600 mr-2"/> 
-                請在下方待排程清單中，為專案選擇預計進場月份。
-            </div>
-
+            <div className="mb-4 bg-yellow-50 p-3 rounded border border-yellow-200 text-sm flex items-center"><AlertCircle className="w-4 h-4 text-yellow-600 mr-2"/> 請在下方待排程清單中，為專案選擇預計進場月份。</div>
             <div className="flex-1 overflow-auto border rounded bg-gray-50 flex">
                 <div className="w-64 bg-white border-r p-4 flex-shrink-0 overflow-y-auto shadow-inner">
                     <h3 className="font-bold text-gray-600 mb-3 border-b pb-2">待排程案件 ({unscheduledProjects.length})</h3>
@@ -1177,10 +801,7 @@ export default function App() {
                                 <div className="font-bold">{p.name}</div>
                                 <div className="text-xs text-gray-500 flex justify-between mt-1 items-center">
                                     <span>{p.district}</span>
-                                    <select className="border rounded bg-white p-1" value="" onChange={(e) => handleUpdateProject(p.id, 'scheduleMonth', e.target.value)}>
-                                        <option value="">指派月份</option>
-                                        {months.map(m => <option key={m} value={m}>{m}月</option>)}
-                                    </select>
+                                    <select className="border rounded bg-white p-1" value="" onChange={(e) => handleUpdateProject(p.id, 'scheduleMonth', e.target.value)}><option value="">指派月份</option>{months.map(m => <option key={m} value={m}>{m}月</option>)}</select>
                                 </div>
                             </div>
                         ))}
@@ -1192,19 +813,12 @@ export default function App() {
                         const mProjects = scheduledProjects.filter(p => p.scheduleMonth === String(month));
                         return (
                             <div key={month} className="w-64 flex-shrink-0 bg-white border rounded-lg shadow-sm flex flex-col">
-                                <div className="bg-gradient-to-r from-teal-500 to-emerald-500 p-2 rounded-t-lg text-white font-bold text-center">
-                                    115年 {month}月
-                                </div>
+                                <div className="bg-gradient-to-r from-teal-500 to-emerald-500 p-2 rounded-t-lg text-white font-bold text-center">115年 {month}月</div>
                                 <div className="p-2 flex-1 overflow-y-auto space-y-2 min-h-[300px] bg-gray-50/50">
                                     {mProjects.map(p => (
                                         <div key={p.id} className="p-2 border border-teal-100 rounded bg-white text-sm relative group shadow-sm">
-                                            <div className="font-bold text-teal-800">{p.name}</div>
-                                            <div className="text-xs text-gray-500">{p.district}</div>
-                                            <button 
-                                                className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition"
-                                                onClick={() => handleUpdateProject(p.id, 'scheduleMonth', '')}
-                                                title="移出排程"
-                                            >✕</button>
+                                            <div className="font-bold text-teal-800">{p.name}</div><div className="text-xs text-gray-500">{p.district}</div>
+                                            <button className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition" onClick={() => handleUpdateProject(p.id, 'scheduleMonth', '')} title="移出排程">✕</button>
                                         </div>
                                     ))}
                                     {mProjects.length === 0 && <div className="text-xs text-center text-gray-400 mt-4">尚無排程</div>}
@@ -1221,11 +835,35 @@ export default function App() {
   const renderSettings = () => (
     <div className="max-w-4xl mx-auto space-y-6 animate-fade-in pb-20">
         
+        {/* --- AI API Key 設定區塊 --- */}
+        <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-purple-500">
+            <h2 className="text-xl font-bold mb-2 flex items-center text-gray-800">
+                <Key className="mr-2 text-purple-500"/> AI 戰情特助設定 (重要)
+            </h2>
+            <p className="text-sm text-gray-600 mb-4 line-relaxed">
+                系統已成功部署至外部網路！為了讓 AI 能在您的專屬網址上為您提供服務，請輸入您的 Google Gemini API Key。<br/>
+                <span className="text-purple-600 font-bold">(為確保最高資安層級，您的金鑰僅會加密儲存於當前設備的瀏覽器中，絕對不會上傳至伺服器或 GitHub 原始碼內。)</span>
+            </p>
+            <div className="flex flex-col space-y-2">
+                <input 
+                    type="password" 
+                    placeholder="請貼上 AIzaSy 開頭的 API Key..."
+                    className="w-full p-3 rounded border border-gray-300 focus:ring-2 focus:ring-purple-400 outline-none font-mono text-sm shadow-sm"
+                    value={userApiKey}
+                    onChange={(e) => {
+                        setUserApiKey(e.target.value);
+                        localStorage.setItem('ty_gemini_key', e.target.value);
+                    }}
+                />
+                <p className="text-xs text-gray-500">
+                    尚未擁有金鑰？請前往 <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-blue-500 underline hover:text-blue-700 font-bold">Google AI Studio</a> 免費申請。
+                </p>
+            </div>
+        </div>
+
         {/* --- 系統更新日誌區塊 --- */}
         <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-yellow-400">
-            <h2 className="text-xl font-bold mb-4 flex items-center text-gray-800">
-                <History className="mr-2 text-yellow-500"/> 系統更新日誌 (Changelog)
-            </h2>
+            <h2 className="text-xl font-bold mb-4 flex items-center text-gray-800"><History className="mr-2 text-yellow-500"/> 系統更新日誌 (Changelog)</h2>
             <div className="space-y-4 max-h-60 overflow-y-auto pr-2">
                 {CHANGELOG.map((log, idx) => (
                     <div key={idx} className="border-b border-gray-100 pb-3 last:border-0">
@@ -1233,18 +871,16 @@ export default function App() {
                             <span className="font-mono font-bold text-pink-600 bg-pink-50 px-2 py-0.5 rounded text-xs">{log.version}</span>
                             <span className="text-sm text-gray-500 flex items-center"><Clock className="w-3 h-3 mr-1"/> {log.date}</span>
                         </div>
-                        <ul className="list-disc list-inside text-sm text-gray-700 ml-4 space-y-1">
-                            {log.notes.map((note, i) => <li key={i}>{note}</li>)}
-                        </ul>
+                        <ul className="list-disc list-inside text-sm text-gray-700 ml-4 space-y-1">{log.notes.map((note, i) => <li key={i}>{note}</li>)}</ul>
                     </div>
                 ))}
             </div>
         </div>
 
         <div className="bg-white p-6 rounded-xl shadow-sm">
-            <h2 className="text-xl font-bold mb-4 flex items-center text-gray-800"><Database className="mr-2"/> 報表匯出與系統更新</h2>
+            <h2 className="text-xl font-bold mb-4 flex items-center text-gray-800"><Database className="mr-2"/> 報表匯出與系統備份</h2>
             <p className="text-sm text-gray-600 mb-6 line-relaxed">
-                本系統為純前端架構 (可部署於 Vercel)，為確保資料不遺失，請養成定期匯出 CSV 的習慣。<br/>
+                本系統為純前端架構，為確保資料不遺失，請養成定期匯出 CSV 的習慣。<br/>
                 當有新資料或大量批次修改時，可修改 CSV 後重新匯入覆蓋。
             </p>
             
@@ -1255,7 +891,6 @@ export default function App() {
                     <p className="text-xs text-blue-600 mb-4">將目前的資料庫匯出為 CSV 檔。</p>
                     <button onClick={exportCSV} className="bg-blue-600 text-white px-4 py-2 rounded shadow hover:bg-blue-700 w-full font-bold">匯出 CSV</button>
                 </div>
-
                 <div className="border border-green-200 bg-green-50 p-6 rounded-lg text-center hover:shadow-md transition">
                     <Upload className="w-12 h-12 text-green-500 mx-auto mb-4"/>
                     <h3 className="font-bold text-green-800 mb-2">2. 匯入更新系統</h3>
@@ -1263,15 +898,11 @@ export default function App() {
                     <input type="file" accept=".csv" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
                     <button onClick={() => fileInputRef.current.click()} className="bg-green-600 text-white px-4 py-2 rounded shadow hover:bg-green-700 w-full font-bold">選擇 CSV 匯入</button>
                 </div>
-
                 <div className="border border-pink-200 bg-pink-50 p-6 rounded-lg text-center hover:shadow-md transition relative">
-                    <div className="absolute -top-3 -right-3 bg-red-500 text-white text-[10px] px-2 py-1 rounded-full font-bold animate-pulse shadow-md">A4 報告</div>
                     <FileText className="w-12 h-12 text-pink-500 mx-auto mb-4"/>
                     <h3 className="font-bold text-pink-800 mb-2">3. 匯出會議報表</h3>
                     <p className="text-xs text-pink-600 mb-4">產生 A4 格式、2cm 邊界的 Word 檔。</p>
-                    <button onClick={exportWord} className="bg-pink-600 text-white px-4 py-2 rounded shadow hover:bg-pink-700 w-full font-bold flex items-center justify-center">
-                        <FileText className="w-4 h-4 mr-2"/> 匯出 Word (.doc)
-                    </button>
+                    <button onClick={exportWord} className="bg-pink-600 text-white px-4 py-2 rounded shadow hover:bg-pink-700 w-full font-bold flex items-center justify-center"><FileText className="w-4 h-4 mr-2"/> 匯出 Word (.doc)</button>
                 </div>
             </div>
         </div>
@@ -1279,13 +910,7 @@ export default function App() {
         <div className="bg-white p-6 rounded-xl shadow-sm text-center border border-gray-200">
             <h2 className="text-lg font-bold mb-4">儲存暫存變更</h2>
             <p className="text-sm text-gray-500 mb-4">若您在介面上做了單筆修改，必須點擊儲存以消除未儲存提示 (重新整理網頁將流失暫存)。</p>
-            <button 
-                onClick={saveChanges} 
-                disabled={!isDirty}
-                className={`px-8 py-3 rounded font-bold shadow-lg flex items-center justify-center mx-auto transition-all ${isDirty ? 'bg-pink-600 text-white hover:bg-pink-700 hover:scale-105' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}
-            >
-                <Save className="w-5 h-5 mr-2" /> {isDirty ? '儲存變更' : '目前無變更'}
-            </button>
+            <button onClick={saveChanges} disabled={!isDirty} className={`px-8 py-3 rounded font-bold shadow-lg flex items-center justify-center mx-auto transition-all ${isDirty ? 'bg-pink-600 text-white hover:bg-pink-700 hover:scale-105' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}><Save className="w-5 h-5 mr-2" /> {isDirty ? '儲存變更' : '目前無變更'}</button>
         </div>
     </div>
   );
@@ -1296,13 +921,9 @@ export default function App() {
         <div className="p-6 border-b border-gray-800 flex items-center justify-between">
             <div className="flex items-center">
                 <div className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center mr-3 shadow-lg shadow-pink-500/30">
-                    <div className="w-2 h-2 bg-white rounded-full"></div>
-                    <div className="w-2 h-2 bg-yellow-300 rounded-full ml-1"></div>
+                    <div className="w-2 h-2 bg-white rounded-full"></div><div className="w-2 h-2 bg-yellow-300 rounded-full ml-1"></div>
                 </div>
-                <div>
-                    <h1 className="text-lg font-bold tracking-wider">桃園市</h1>
-                    <p className="text-xs text-gray-400">通學廊道戰情儀錶板</p>
-                </div>
+                <div><h1 className="text-lg font-bold tracking-wider">桃園市</h1><p className="text-xs text-gray-400">通學廊道戰情儀錶板</p></div>
             </div>
         </div>
         
@@ -1312,24 +933,19 @@ export default function App() {
                 { id: 'central', icon: Building2, label: '中央補助案' },
                 { id: 'schools', icon: Search, label: '學校總表' },
                 { id: 'schedule', icon: Calendar, label: '115年度排程' },
-                { id: 'settings', icon: Database, label: '報表匯出與設定' },
+                { id: 'settings', icon: Database, label: '系統設定與備份' }, // 改名以強調設定功能
             ].map(item => (
                 <button
                     key={item.id}
                     onClick={() => setActiveTab(item.id)}
                     className={`w-full flex items-center p-3 rounded-lg transition-colors font-semibold ${activeTab === item.id ? 'bg-pink-600 text-white shadow-md' : 'text-gray-400 hover:bg-gray-800 hover:text-white'}`}
                 >
-                    <item.icon className="w-5 h-5 mr-3" />
-                    {item.label}
+                    <item.icon className="w-5 h-5 mr-3" />{item.label}
                 </button>
             ))}
         </nav>
         
-        <div className="p-4 bg-gray-800 text-xs text-gray-400 text-center select-none flex flex-col items-center">
-            <span>科技城市 ‧ 魅力桃園</span>
-            {/* 側邊欄底部也顯示即時日期 */}
-            <span className="mt-2 text-[10px] text-gray-500 flex items-center"><Clock className="w-3 h-3 mr-1"/> {currentDate}</span>
-        </div>
+        <div className="p-4 bg-gray-800 text-xs text-gray-400 text-center select-none flex flex-col items-center"><span>科技城市 ‧ 魅力桃園</span><span className="mt-2 text-[10px] text-gray-500 flex items-center"><Clock className="w-3 h-3 mr-1"/> {currentDate}</span></div>
       </aside>
 
       <main className="flex-1 flex flex-col h-full overflow-hidden relative">
@@ -1340,19 +956,13 @@ export default function App() {
                     {activeTab === 'central' && '專案管理 / 中央補助案'}
                     {activeTab === 'schools' && '資料庫 / 學校總表'}
                     {activeTab === 'schedule' && '排程 / 115年度施工'}
-                    {activeTab === 'settings' && '系統 / 報表匯出與設定'}
+                    {activeTab === 'settings' && '系統 / 報表設定與金鑰'}
                 </h2>
-                {/* 頂部即時日期標籤 */}
-                <span className="ml-4 bg-pink-50 text-pink-700 px-3 py-1 rounded-full text-xs font-bold border border-pink-100 flex items-center shadow-sm">
-                    <Calendar className="w-3 h-3 mr-1"/> {currentDate}
-                </span>
+                <span className="ml-4 bg-pink-50 text-pink-700 px-3 py-1 rounded-full text-xs font-bold border border-pink-100 flex items-center shadow-sm"><Calendar className="w-3 h-3 mr-1"/> {currentDate}</span>
             </div>
-            
             <div className="flex items-center space-x-4">
                 {isDirty && <span className="flex items-center text-sm text-yellow-600 font-bold animate-pulse"><AlertCircle className="w-4 h-4 mr-1"/> 有未儲存的變更</span>}
-                <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold border border-blue-200 shadow-inner">
-                    工
-                </div>
+                <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold border border-blue-200 shadow-inner">工</div>
             </div>
         </header>
 
@@ -1367,22 +977,17 @@ export default function App() {
 
       {/* --- AI 戰情特助 (Floating Widget) --- */}
       <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end">
-        {/* AI 對話框 */}
         {isAIOpen && (
             <div className="w-80 h-96 bg-white rounded-xl shadow-2xl border border-pink-100 mb-4 flex flex-col overflow-hidden animate-fade-in">
                 <div className="bg-gradient-to-r from-pink-500 to-purple-600 p-3 text-white flex justify-between items-center shadow-md">
-                    <div className="flex items-center font-bold">
-                        <MessageCircle className="w-5 h-5 mr-2" /> AI 戰情特助
-                    </div>
-                    <button onClick={() => setIsAIOpen(false)} className="hover:text-pink-200 transition-colors">
-                        <X className="w-5 h-5" />
-                    </button>
+                    <div className="flex items-center font-bold"><MessageCircle className="w-5 h-5 mr-2" /> AI 戰情特助</div>
+                    <button onClick={() => setIsAIOpen(false)} className="hover:text-pink-200 transition-colors"><X className="w-5 h-5" /></button>
                 </div>
                 
                 <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50 text-sm">
                     {aiMessages.map((msg, idx) => (
                         <div key={idx} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                            <div className={`px-4 py-2 rounded-2xl max-w-[85%] ${msg.role === 'user' ? 'bg-pink-500 text-white rounded-tr-none shadow-sm' : 'bg-white border border-gray-200 text-gray-700 rounded-tl-none shadow-sm'}`}>
+                            <div className={`px-4 py-2 rounded-2xl max-w-[85%] whitespace-pre-wrap ${msg.role === 'user' ? 'bg-pink-500 text-white rounded-tr-none shadow-sm' : 'bg-white border border-gray-200 text-gray-700 rounded-tl-none shadow-sm'}`}>
                                 {msg.content}
                             </div>
                         </div>
@@ -1390,9 +995,7 @@ export default function App() {
                     {isAILoading && (
                         <div className="flex items-start">
                             <div className="px-4 py-2 rounded-2xl bg-white border border-gray-200 text-gray-500 rounded-tl-none flex items-center space-x-1">
-                                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></div>
+                                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div><div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div><div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></div>
                             </div>
                         </div>
                     )}
@@ -1403,16 +1006,16 @@ export default function App() {
                     <input 
                         type="text" 
                         className="flex-1 border-0 bg-gray-100 rounded-full px-4 py-2 text-sm focus:ring-2 focus:ring-pink-300 outline-none transition-all"
-                        placeholder="請輸入問題..."
+                        placeholder={userApiKey ? "請輸入問題..." : "請先至設定頁輸入金鑰..."}
                         value={aiInput}
                         onChange={e => setAiInput(e.target.value)}
                         onKeyDown={e => e.key === 'Enter' && handleAiSubmit()}
-                        disabled={isAILoading}
+                        disabled={isAILoading || !userApiKey}
                     />
                     <button 
-                        className={`ml-2 p-2 rounded-full ${aiInput.trim() && !isAILoading ? 'bg-pink-500 text-white hover:bg-pink-600' : 'bg-gray-200 text-gray-400 cursor-not-allowed'} transition-colors`}
+                        className={`ml-2 p-2 rounded-full ${aiInput.trim() && !isAILoading && userApiKey ? 'bg-pink-500 text-white hover:bg-pink-600' : 'bg-gray-200 text-gray-400 cursor-not-allowed'} transition-colors`}
                         onClick={handleAiSubmit}
-                        disabled={!aiInput.trim() || isAILoading}
+                        disabled={!aiInput.trim() || isAILoading || !userApiKey}
                     >
                         <Send className="w-4 h-4" />
                     </button>
@@ -1420,7 +1023,6 @@ export default function App() {
             </div>
         )}
 
-        {/* 懸浮按鈕 */}
         <button 
             onClick={() => setIsAIOpen(!isAIOpen)}
             className={`w-14 h-14 rounded-full flex items-center justify-center shadow-xl transition-transform hover:scale-110 ${isAIOpen ? 'bg-gray-800 text-white' : 'bg-gradient-to-tr from-pink-500 to-purple-500 text-white'}`}
@@ -1432,8 +1034,6 @@ export default function App() {
       <style dangerouslySetInnerHTML={{__html: `
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         .animate-fade-in { animation: fadeIn 0.4s ease-out forwards; }
-        
-        /* 隱藏滾動條但保留功能 (Chrome, Safari, Opera) */
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
         ::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 4px; }
