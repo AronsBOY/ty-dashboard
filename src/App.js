@@ -20,7 +20,8 @@ const STATUSES = ['已完工', '施工中', '規劃中', '暫緩'];
 
 // --- 系統更新日誌資料 ---
 const CHANGELOG = [
-  { date: '2026-03-13', version: 'v1.6.0', notes: ['修復 Gemini API 模型權限問題 (切換至 1.5-flash)', '新增全域 A4 視窗截圖/PDF 匯出功能 (2cm邊界)'] },
+  { date: '2026-03-13', version: 'v1.6.1', notes: ['修復 Gemini API 模型名稱錯誤，升級至 gemini-2.0-flash'] },
+  { date: '2026-03-13', version: 'v1.6.0', notes: ['修復 Gemini API 模型權限問題', '新增全域 A4 視窗截圖/PDF 匯出功能 (2cm邊界)'] },
   { date: '2026-03-13', version: 'v1.5.0', notes: ['新增 Gemini API Key 本機安全儲存介面', '支援外部 Vercel 部署之 AI 連線功能'] },
   { date: '2026-03-13', version: 'v1.4.0', notes: ['新增即時日期顯示', '新增系統更新日誌區塊', '優化介面排版'] },
   { date: '2026-03-12', version: 'v1.3.0', notes: ['新增 A4 Word 匯出功能', '實作羅浮學區跨層級整併邏輯'] },
@@ -570,8 +571,8 @@ export default function App() {
 - 實際歸戶學校數：${kpis.actualTotal} 所
 請針對使用者的提問給出清晰、有邏輯的分析。`;
 
-        // 修正：將模型變更為穩定全面開放的 gemini-1.5-flash，解決找不到預覽版模型的問題
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${activeKey}`, {
+        // 修正：將模型變更為最新且全面開放的 gemini-2.0-flash
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${activeKey}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
