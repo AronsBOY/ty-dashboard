@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-// 修正：移除未使用的 BarChart, Bar, XAxis, YAxis, CartesianGrid 變數，避免 Vercel ESLint 報錯
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { LayoutDashboard, Building2, Calendar, Database, Download, Upload, Save, MapPin, Image as ImageIcon, Search, AlertCircle, Edit, CheckSquare, Square, Check, MessageCircle, X, Send, Filter, FileText, Clock, History, Key, Printer, Settings, Plus, Paperclip, FileOutput } from 'lucide-react';
 
@@ -21,7 +20,7 @@ const STATUSES = ['已完工', '施工中', '規劃中', '暫緩'];
 
 // --- 系統更新日誌資料 ---
 const CHANGELOG = [
-  { date: '2026-03-13', version: 'v2.0.1', notes: ['重構：消除巢狀元件定義，全面改為 Render 函數，修復 Vercel 編譯錯誤'] },
+  { date: '2026-03-13', version: 'v2.0.2', notes: ['核心重構：徹底消除巢狀元件與底線命名，全面改為 Render 函數，修復 Vercel 編譯中斷錯誤'] },
   { date: '2026-03-13', version: 'v2.0.0', notes: ['AI特助升級：支援 TXT 參考資料上傳 (RAG架構) 與一鍵產生新聞稿', '學校總表：新增案件功能實作', '排程看板：大幅擴充口袋名單視窗寬度與視覺體驗'] },
   { date: '2026-03-13', version: 'v1.9.0', notes: ['學校總表支援自訂欄位寬度拖曳', '學校總表開啟全域垂直/水平卷軸', '學校總表新增進場與完工日期'] },
   { date: '2026-03-13', version: 'v1.8.0', notes: ['優化 AI 提示詞架構，餵入各行政區詳細統計', '新增 115年度排程達標率看板', '拆分 A4 列印模組 [1] 與 [1-1]'] },
@@ -425,7 +424,11 @@ export default function App() {
   const handleUpdateProject = (id, field, value) => { setProjects(prev => prev.map(p => p.id === id ? { ...p, [field]: value } : p)); setIsDirty(true); };
   const handleToggleExclude = (id) => { setProjects(prev => prev.map(p => p.id === id ? { ...p, isExcluded: !p.isExcluded } : p)); setIsDirty(true); };
   const handleToggleNotApproved = (id) => { setProjects(prev => prev.map(p => p.id === id ? { ...p, isNotApproved: !p.isNotApproved } : p)); setIsDirty(true); };
-  
+  const handleFeatureToggle = (id, feature) => {
+    setProjects(prev => prev.map(p => { if (p.id === id) return { ...p, features: { ...p.features, [feature]: !p.features[feature] } }; return p; }));
+    setIsDirty(true);
+  };
+
   const handleAddNewProject = () => {
     if (!newProject.name.trim()) { alert('請輸入學校/案件名稱'); return; }
     const newId = Date.now().toString();
@@ -552,10 +555,10 @@ ${aiContextText || '目前無上傳參考資料。'}
   };
 
   // ==========================================
-  // 螢幕與列印共用的 JSX 區塊 (重構為 Render 函數以避免 Vercel 報錯)
+  // 螢幕與列印共用的區塊 (重構為 Render 函數以避免 Vercel 報錯)
   // ==========================================
   
-  const renderBlock1_Overview = () => (
+  const renderBlock1Overview = () => (
     <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 mb-6 print-border-l-primary print-avoid-break" style={{ borderColor: COLORS.primary }}>
         <h2 className="text-xl font-bold mb-4" style={{ color: COLORS.primary }}>[1] 錄案與經費概況總覽</h2>
         <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
@@ -563,13 +566,13 @@ ${aiContextText || '目前無上傳參考資料。'}
           <div className="bg-green-50 p-4 rounded-lg text-center border border-green-100 relative print-bg-green-50"><div className="absolute top-0 left-0 w-full h-1 bg-green-500 print-bg-green-500"></div><p className="text-sm text-green-600">已完工</p><p className="text-3xl font-bold text-green-700">{kpis.completed}</p><p className="text-xs text-green-600 mt-2">已投入 {kpis.completedBudget.toLocaleString()} 萬</p></div>
           <div className="bg-blue-50 p-4 rounded-lg text-center border border-blue-100 relative print-bg-blue-50"><div className="absolute top-0 left-0 w-full h-1 bg-blue-500 print-bg-blue-500"></div><p className="text-sm text-blue-600">施工中</p><p className="text-3xl font-bold text-blue-700">{kpis.inProgress}</p><p className="text-xs text-blue-600 mt-2">執行中 {kpis.inProgressBudget.toLocaleString()} 萬</p></div>
           <div className="bg-yellow-50 p-4 rounded-lg text-center border border-yellow-100 relative print-bg-yellow-50"><div className="absolute top-0 left-0 w-full h-1 bg-yellow-400 print-bg-yellow-400"></div><p className="text-sm text-yellow-600">規劃中</p><p className="text-3xl font-bold text-yellow-700">{kpis.planning}</p><p className="text-xs mt-2 text-transparent select-none">-</p></div>
-          <div className="bg-gray-100 p-4 rounded-lg text-center border border-gray-200 print-bg-gray-100"><p className="text-sm text-gray-600">暫直</p><p className="text-3xl font-bold text-gray-700">{kpis.paused}</p><p className="text-xs mt-2 text-transparent select-none">-</p></div>
+          <div className="bg-gray-100 p-4 rounded-lg text-center border border-gray-200 print-bg-gray-100"><p className="text-sm text-gray-600">暫緩</p><p className="text-3xl font-bold text-gray-700">{kpis.paused}</p><p className="text-xs mt-2 text-transparent select-none">-</p></div>
           <div className="bg-red-50 p-4 rounded-lg text-center border border-red-100 print-bg-red-50"><p className="text-sm text-red-600">視為重複案</p><p className="text-3xl font-bold text-red-700">{kpis.duplicatedCount}</p><p className="text-xs mt-2 text-transparent select-none">-</p></div>
         </div>
     </div>
   );
 
-  const renderBlock1_1_ActualStats = () => (
+  const renderBlock1ActualStats = () => (
     <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 mb-6 print-avoid-break print-border-l-gray-800" style={{ borderColor: '#1F2937' }}>
         <h2 className="text-lg font-bold mb-4 text-gray-800 flex items-center"><Check className="w-5 h-5 mr-1 text-green-500"/> [1-1] 實際學校數量統計 (排除期數重複案與手動排除件)</h2>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
@@ -582,7 +585,7 @@ ${aiContextText || '目前無上傳參考資料。'}
     </div>
   );
 
-  const renderBlock2_PieCharts = () => (
+  const renderBlock2PieCharts = () => (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6 print-avoid-break">
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
           <h2 className="text-lg font-bold mb-4">[2] 預算來源分析 (單位: 萬元)</h2>
@@ -595,7 +598,7 @@ ${aiContextText || '目前無上傳參考資料。'}
     </div>
   );
 
-  const renderBlock3_DistrictCards = () => (
+  const renderBlock3DistrictCards = () => (
     <div className="bg-white p-6 rounded-xl shadow-sm mb-6 print-avoid-break">
          <h2 className="text-lg font-bold mb-4">[3] 行政區進度與經費卡片 (實際歸戶後)</h2>
          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4 print-grid-cols-3">
@@ -615,7 +618,7 @@ ${aiContextText || '目前無上傳參考資料。'}
     </div>
   );
 
-  const renderBlock4_CentralStats = () => {
+  const renderBlock4CentralStats = () => {
     const centralProjects = projects.filter(p => p.budgetSource1 === '中央補助');
     const filtered = filterDist === 'All' ? centralProjects : centralProjects.filter(p => p.district === filterDist);
     const nlmaCases = filtered.filter(p => p.budgetSource2 === '國土署' && !p.isNotApproved);
@@ -639,7 +642,7 @@ ${aiContextText || '目前無上傳參考資料。'}
     );
   };
 
-  const renderBlock5_CentralTable = () => {
+  const renderBlock5CentralTable = () => {
       const centralProjects = projects.filter(p => p.budgetSource1 === '中央補助');
       const filtered = filterDist === 'All' ? centralProjects : centralProjects.filter(p => p.district === filterDist);
       return (
@@ -674,7 +677,7 @@ ${aiContextText || '目前無上傳參考資料。'}
       );
   };
 
-  const renderBlock6_SchoolStats = () => (
+  const renderBlock6SchoolStats = () => (
       <div className="mb-6 print-avoid-break">
         <h2 className="text-lg font-bold mb-3 border-l-4 pl-2" style={{ borderColor: COLORS.warmYellow }}>[6] 學校總表過濾統計 ({schoolDistrictFilter === 'All' ? '全市' : schoolDistrictFilter})</h2>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3 print-grid-cols-5">
@@ -687,7 +690,7 @@ ${aiContextText || '目前無上傳參考資料。'}
       </div>
   );
 
-  const renderBlock7_SchoolTable = () => (
+  const renderBlock7SchoolTable = () => (
       <div className="flex-1 flex flex-col min-h-0 mb-2">
         <div className="flex justify-between items-center mb-3">
             <h2 className="text-lg font-bold border-l-4 pl-2" style={{ borderColor: COLORS.warmYellow }}>[7] 學校總表清單明細 (顯示 {displayProjects.length} 筆)</h2>
@@ -737,7 +740,7 @@ ${aiContextText || '目前無上傳參考資料。'}
       </div>
   );
 
-  const renderBlock8_Schedule = () => {
+  const renderBlock8Schedule = () => {
      const months = Array.from({length: 12}, (_, i) => i + 1);
      const scheduledProjects = projects.filter(p => p.scheduleMonth);
      const unscheduledProjects = projects.filter(p => !p.scheduleMonth && p.status !== '已完工' && p.status !== '暫緩' && !p.isExcluded);
@@ -798,10 +801,10 @@ ${aiContextText || '目前無上傳參考資料。'}
 
   const renderDashboard = () => (
     <div className="space-y-6 animate-fade-in pb-20">
-      {renderBlock1_Overview()}
-      {renderBlock1_1_ActualStats()}
-      {renderBlock2_PieCharts()}
-      {renderBlock3_DistrictCards()}
+      {renderBlock1Overview()}
+      {renderBlock1ActualStats()}
+      {renderBlock2PieCharts()}
+      {renderBlock3DistrictCards()}
     </div>
   );
 
@@ -811,8 +814,8 @@ ${aiContextText || '目前無上傳參考資料。'}
             <div><h2 className="text-xl font-bold flex items-center" style={{ color: COLORS.techBlue }}><Building2 className="w-6 h-6 mr-2"/> 中央補助專案管理</h2><p className="text-sm text-gray-500 mt-1">勾選「不核定」將自動自上方統計與預算中扣除。</p></div>
             <select className="border-2 border-blue-200 p-2 rounded-lg font-bold outline-none focus:ring-2 focus:ring-blue-300" value={filterDist} onChange={e => setFilterDist(e.target.value)}><option value="All">所有行政區篩選</option>{DISTRICTS.map(d => <option key={d} value={d}>{d}</option>)}</select>
         </div>
-        {renderBlock4_CentralStats()}
-        {renderBlock5_CentralTable()}
+        {renderBlock4CentralStats()}
+        {renderBlock5CentralTable()}
       </div>
   );
 
@@ -825,8 +828,8 @@ ${aiContextText || '目前無上傳參考資料。'}
                 <div className="text-sm text-pink-700 bg-pink-50 px-3 py-1 rounded-full font-bold border border-pink-100">顯示 {displayProjects.length} 筆資料</div>
             </div>
         </div>
-        {renderBlock6_SchoolStats()}
-        {renderBlock7_SchoolTable()}
+        {renderBlock6SchoolStats()}
+        {renderBlock7SchoolTable()}
 
         {/* --- 編輯既有案件 Modal --- */}
         {selectedProject && (
@@ -916,7 +919,7 @@ ${aiContextText || '目前無上傳參考資料。'}
 
      return (
         <div className="bg-white p-6 rounded-xl shadow-sm h-full flex flex-col animate-fade-in">
-            {renderBlock8_Schedule()}
+            {renderBlock8Schedule()}
             <div className="flex-1 overflow-hidden border rounded bg-gray-50 flex mt-4">
                 <div className="w-1/3 min-w-[350px] max-w-[450px] bg-white border-r p-4 flex flex-col shadow-inner">
                     <h3 className="font-bold text-gray-600 mb-3 border-b pb-2 flex items-center justify-between flex-shrink-0">
@@ -986,6 +989,9 @@ ${aiContextText || '目前無上傳參考資料。'}
 
   return (
     <>
+    {/* ========================================== */}
+    {/* 【正常螢幕操作介面】 (列印時會完全隱藏) */}
+    {/* ========================================== */}
     <div className="flex h-screen bg-gray-100 font-sans text-gray-800 relative screen-only overflow-hidden">
       <aside className="w-64 bg-gray-900 text-white flex flex-col shadow-xl z-20 flex-shrink-0">
         <div className="p-6 border-b border-gray-800 flex items-center justify-between">
@@ -1137,15 +1143,15 @@ ${aiContextText || '目前無上傳參考資料。'}
             <p className="text-sm text-gray-600 font-bold">資料統計日期：{currentDate}</p>
         </div>
 
-        {printSelection.b1 && renderBlock1_Overview()}
-        {printSelection.b1_1 && renderBlock1_1_ActualStats()}
-        {printSelection.b2 && renderBlock2_PieCharts()}
-        {printSelection.b3 && renderBlock3_DistrictCards()}
-        {printSelection.b4 && renderBlock4_CentralStats()}
-        {printSelection.b5 && renderBlock5_CentralTable()}
-        {printSelection.b6 && renderBlock6_SchoolStats()}
-        {printSelection.b7 && renderBlock7_SchoolTable()}
-        {printSelection.b8 && renderBlock8_Schedule()}
+        {printSelection.b1 && renderBlock1Overview()}
+        {printSelection.b1_1 && renderBlock1ActualStats()}
+        {printSelection.b2 && renderBlock2PieCharts()}
+        {printSelection.b3 && renderBlock3DistrictCards()}
+        {printSelection.b4 && renderBlock4CentralStats()}
+        {printSelection.b5 && renderBlock5CentralTable()}
+        {printSelection.b6 && renderBlock6SchoolStats()}
+        {printSelection.b7 && renderBlock7SchoolTable()}
+        {printSelection.b8 && renderBlock8Schedule()}
 
         {!Object.values(printSelection).some(Boolean) && (
             <div className="text-center text-gray-400 py-20 border-2 border-dashed border-gray-200">
