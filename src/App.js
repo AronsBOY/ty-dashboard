@@ -20,8 +20,8 @@ const STATUSES = ['已完工', '施工中', '規劃中', '暫緩'];
 
 // --- 系統更新日誌資料 ---
 const CHANGELOG = [
+  { date: '2026-03-13', version: 'v1.7.1', notes: ['修復 Gemini API 權限錯誤，全面升級至最新 gemini-2.5-flash 模型'] },
   { date: '2026-03-13', version: 'v1.7.0', notes: ['新增 A4 自訂排版列印模組：支援 8 大區塊自由勾選組合匯出'] },
-  { date: '2026-03-13', version: 'v1.6.1', notes: ['修復 Gemini API 模型名稱錯誤，升級至 gemini-2.0-flash'] },
   { date: '2026-03-13', version: 'v1.6.0', notes: ['修復 Gemini API 模型權限問題', '新增全域 A4 視窗截圖/PDF 匯出功能 (2cm邊界)'] },
   { date: '2026-03-13', version: 'v1.5.0', notes: ['新增 Gemini API Key 本機安全儲存介面', '支援外部 Vercel 部署之 AI 連線功能'] },
   { date: '2026-03-13', version: 'v1.4.0', notes: ['新增即時日期顯示', '新增系統更新日誌區塊', '優化介面排版'] },
@@ -408,6 +408,34 @@ export default function App() {
     setIsDirty(true);
   };
 
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target.result;
+      const lines = text.split('\n');
+      const newProjects = [];
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        const cols = line.split(',');
+        if (!cols[2] || cols[2].trim() === '') continue;
+        newProjects.push({
+          id: cols[0] || Date.now().toString() + i, district: cols[1], name: cols[2], level: cols[3] || determineLevel(cols[2]),
+          status: cols[4] || '規劃中', budgetSource1: cols[5] || '', budgetSource2: cols[6] || '', budgetAmount: Number(cols[7]) || 0,
+          startDate: cleanDate(cols[8]), endDate: cleanDate(cols[9]), agency: cols[10] || '', scheduleMonth: cols[11] || '',
+          isExcluded: cols[12] === 'Y', isNotApproved: cols[13] === 'Y', features: { pole: false, shelter: false, light: false, pickup: false }
+        });
+      }
+      if (newProjects.length > 0) {
+        setProjects(newProjects); setIsDirty(true); alert(`成功匯入 ${newProjects.length} 筆資料`);
+      }
+    };
+    reader.readAsText(file);
+    if(fileInputRef.current) fileInputRef.current.value = '';
+  };
+
   const exportCSV = () => {
     const headers = ['ID', '行政區', '案名', '層級', '狀態', '預算來源(大項)', '預算來源(細項)', '經費(萬)', '開工日', '完工日', '執行機關', '排程月份', '排除歸戶', '不核定'];
     const rows = projects.map(p => [ p.id, p.district, p.name, p.level, p.status, p.budgetSource1, p.budgetSource2, p.budgetAmount, p.startDate, p.endDate, p.agency, p.scheduleMonth, p.isExcluded ? 'Y' : 'N', p.isNotApproved ? 'Y' : 'N' ]);
@@ -415,6 +443,62 @@ export default function App() {
     const link = document.createElement("a"); link.setAttribute("href", encodeURI(csvContent)); link.setAttribute("download", "桃園通學廊道資料庫_匯出.csv");
     document.body.appendChild(link); link.click(); document.body.removeChild(link);
   };
+
+  const exportWord = () => {
+    const centralProjects = projects.filter(p => p.budgetSource1 === '中央補助' && !p.isNotApproved);
+    const nlmaCases = centralProjects.filter(p => p.budgetSource2 === '國土署');
+    const motcCases = centralProjects.filter(p => p.budgetSource2 === '公路局');
+    const scheduleMonths = Array.from({length: 12}, (_, i) => i + 1);
+
+    const header = `
+      <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+      <head><meta charset='utf-8'><title>桃園市通學廊道戰情儀錶板報表</title>
+        <style>
+          @page WordSection1 { size: 595.3pt 841.9pt; margin: 2.0cm 2.0cm 2.0cm 2.0cm; mso-header-margin: 35.4pt; mso-footer-margin: 35.4pt; mso-paper-source: 0; }
+          div.WordSection1 { page: WordSection1; }
+          body { font-family: 'Microsoft JhengHei', '微軟正黑體', sans-serif; font-size: 11pt; color: #333; line-height: 1.5; }
+          h1 { color: #E83888; text-align: center; font-size: 20pt; margin-bottom: 20px; font-weight: bold; }
+          h2 { color: #00B2E5; font-size: 14pt; border-bottom: 2px solid #00B2E5; padding-bottom: 5px; margin-top: 25px; page-break-after: avoid; font-weight: bold; }
+          table { border-collapse: collapse; width: 100%; margin-top: 10px; margin-bottom: 20px; }
+          th, td { border: 1px solid #999; padding: 6px 8px; text-align: left; vertical-align: middle; }
+          th { background-color: #f2f2f2; font-weight: bold; color: #000; }
+          .highlight { color: #d9534f; font-weight: bold; }
+          ul { margin-top: 5px; } li { margin-bottom: 5px; }
+          .text-center { text-align: center; } .text-right { text-align: right; }
+        </style>
+      </head><body><div class='WordSection1'>
+    `;
+    let content = `<h1>桃園市通學廊道專案進度報告</h1><p style="text-align: right; color: #666;">產出日期：${currentDate}</p>`;
+    content += `<h2>一、戰情儀錶板核心數據</h2><table><tr><th>指標</th><th>帳面數值</th><th>實際歸戶數值 (扣除衍生案/排除案)</th></tr>
+        <tr><td>總錄案</td><td>${kpis.total} 所</td><td class="highlight">${kpis.actualTotal} 所</td></tr>
+        <tr><td>已完工</td><td>${kpis.completed} 所</td><td>${kpis.actualCompleted} 所</td></tr>
+        <tr><td>施工中</td><td>${kpis.inProgress} 所</td><td>${kpis.actualInProgress} 所</td></tr>
+        <tr><td>規劃中</td><td>${kpis.planning} 所</td><td>${kpis.actualPlanning} 所</td></tr>
+        <tr><td>總預算規模</td><td colspan="2" class="highlight">${kpis.totalBudget.toLocaleString()} 萬元</td></tr></table>`;
+    content += `<h2>二、中央補助案概況 (已扣除不核定案件)</h2><ul>
+        <li><strong>國土署：</strong>共計 ${nlmaCases.length} 案，總經費 ${nlmaCases.reduce((s,p)=>s+(Number(p.budgetAmount)||0),0).toLocaleString()} 萬元。</li>
+        <li><strong>交通部公路局：</strong>共計 ${motcCases.length} 案，總經費 ${motcCases.reduce((s,p)=>s+(Number(p.budgetAmount)||0),0).toLocaleString()} 萬元。</li></ul>
+      <table><tr><th width="15%">行政區</th><th width="35%">案名</th><th width="20%">補助單位</th><th width="15%">經費(萬)</th><th width="15%">狀態</th></tr>
+        ${centralProjects.map(p => `<tr><td class="text-center">${p.district}</td><td>${p.name}</td><td class="text-center">${p.budgetSource2}</td><td class="text-right">${Number(p.budgetAmount).toLocaleString()}</td><td class="text-center">${p.status}</td></tr>`).join('')}</table>`;
+    const validSchools = processedProjects.filter(p => !p.isExcluded);
+    content += `<h2>三、學校總表 (實際納入計算清單)</h2><table><tr><th width="10%">項次</th><th width="15%">行政區</th><th width="35%">案名</th><th width="15%">狀態</th><th width="15%">經費(萬)</th></tr>
+        ${validSchools.map(p => `<tr><td class="text-center">${p.itemNumber}</td><td class="text-center">${p.district}</td><td>${p.name}</td><td class="text-center">${p.status}</td><td class="text-right">${Number(p.budgetAmount).toLocaleString()}</td></tr>`).join('')}</table>`;
+    const scheduledProjects = projects.filter(p => p.scheduleMonth);
+    content += `<h2>四、115年度施工排程</h2><table><tr><th width="15%">月份</th><th>預計進場案件</th></tr>
+        ${scheduleMonths.map(m => {
+          const mProjs = scheduledProjects.filter(p => p.scheduleMonth === String(m));
+          return `<tr><td class="text-center" style="font-weight:bold;">${m} 月</td><td>${mProjs.length > 0 ? mProjs.map(p => `[${p.district}] ${p.name}`).join('、 ') : '尚無排程'}</td></tr>`;
+        }).join('')}</table>`;
+
+    const footer = `</div></body></html>`;
+    const blob = new Blob(['\ufeff', header + content + footer], { type: 'application/msword' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url; link.download = `桃園市通學廊道報表_${currentDate}.doc`;
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+  };
+
+  const saveChanges = () => { setIsDirty(false); alert('變更已儲存 (測試版僅儲存於記憶體，請使用匯出備份)'); };
 
   const handleAiSubmit = async () => {
     if (!aiInput.trim()) return;
@@ -437,7 +521,8 @@ export default function App() {
 - 規劃中：${kpis.planning} 案
 - 實際歸戶學校數：${kpis.actualTotal} 所`;
 
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${activeKey}`, {
+        // 修正：將模型升級至目前最廣泛支援且穩定的 gemini-2.5-flash
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${activeKey}`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ contents: [{ parts: [{ text: userMsg }] }], systemInstruction: { parts: [{ text: systemPrompt }] } })
         });
