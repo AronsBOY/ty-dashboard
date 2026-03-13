@@ -20,6 +20,7 @@ const STATUSES = ['已完工', '施工中', '規劃中', '暫緩'];
 
 // --- 系統更新日誌資料 ---
 const CHANGELOG = [
+  { date: '2026-03-13', version: 'v1.8.0', notes: ['優化 AI 提示詞架構，餵入各行政區詳細統計', '新增 115年度排程達標率與口袋名單看板', '拆分 A4 列印模組 [1] 與 [1-1]'] },
   { date: '2026-03-13', version: 'v1.7.1', notes: ['修復 Gemini API 權限錯誤，全面升級至最新 gemini-2.5-flash 模型'] },
   { date: '2026-03-13', version: 'v1.7.0', notes: ['新增 A4 自訂排版列印模組：支援 8 大區塊自由勾選組合匯出'] },
   { date: '2026-03-13', version: 'v1.6.0', notes: ['修復 Gemini API 模型權限問題', '新增全域 A4 視窗截圖/PDF 匯出功能 (2cm邊界)'] },
@@ -27,7 +28,7 @@ const CHANGELOG = [
   { date: '2026-03-13', version: 'v1.4.0', notes: ['新增即時日期顯示', '新增系統更新日誌區塊', '優化介面排版'] },
   { date: '2026-03-12', version: 'v1.3.0', notes: ['新增 A4 Word 匯出功能', '實作羅浮學區跨層級整併邏輯'] },
   { date: '2026-03-11', version: 'v1.2.0', notes: ['實作學校總表動態過濾卡片', '新增中央補助案不核定排除機制'] },
-  { date: '2026-03-10', version: 'v1.1.0', notes: ['新增項次自動編碼 (區分主案與衍生案)', '新增手動排除歸戶機制', '整合 AI 戰情特助 (Gemini API)'] },
+  { date: '2026-03-10', version: 'v1.1.0', notes: ['新增項次自動編碼 (區分主案與重複案)', '新增手動排除歸戶機制', '整合 AI 戰情特助 (Gemini API)'] },
   { date: '2026-03-09', version: 'v1.0.0', notes: ['匯入 159 筆局務會議初始資料', '建立戰情儀錶板與實際歸戶演算法'] },
 ];
 
@@ -239,7 +240,7 @@ export default function App() {
   // --- A4 自訂列印模組 State ---
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   const [printSelection, setPrintSelection] = useState({
-    b1: false, b2: false, b3: false, b4: false, b5: false, b6: false, b7: false, b8: false
+    b1: false, b1_1: false, b2: false, b3: false, b4: false, b5: false, b6: false, b7: false, b8: false
   });
   
   const [userApiKey, setUserApiKey] = useState(() => {
@@ -255,7 +256,7 @@ export default function App() {
   }, []);
 
   const [isAIOpen, setIsAIOpen] = useState(false);
-  const [aiMessages, setAiMessages] = useState([{ role: 'ai', content: '您好！我是桃園市通學廊道的AI戰情特助。我可以根據目前的儀錶板數據回答您的問題，例如：「目前完工比例是多少？」' }]);
+  const [aiMessages, setAiMessages] = useState([{ role: 'ai', content: '長官您好！我是桃園市通學廊道的 AI 戰情特助。我已經讀取了「各行政區的最新統計數據」，您可以問我：「目前哪個行政區完工最多？」或「桃園區的預算執行進度如何？」' }]);
   const [aiInput, setAiInput] = useState('');
   const [isAILoading, setIsAILoading] = useState(false);
   const aiChatEndRef = useRef(null);
@@ -469,7 +470,7 @@ export default function App() {
       </head><body><div class='WordSection1'>
     `;
     let content = `<h1>桃園市通學廊道專案進度報告</h1><p style="text-align: right; color: #666;">產出日期：${currentDate}</p>`;
-    content += `<h2>一、戰情儀錶板核心數據</h2><table><tr><th>指標</th><th>帳面數值</th><th>實際歸戶數值 (扣除衍生案/排除案)</th></tr>
+    content += `<h2>一、戰情儀錶板核心數據</h2><table><tr><th>指標</th><th>帳面數值</th><th>實際歸戶數值 (扣除重複案/排除案)</th></tr>
         <tr><td>總錄案</td><td>${kpis.total} 所</td><td class="highlight">${kpis.actualTotal} 所</td></tr>
         <tr><td>已完工</td><td>${kpis.completed} 所</td><td>${kpis.actualCompleted} 所</td></tr>
         <tr><td>施工中</td><td>${kpis.inProgress} 所</td><td>${kpis.actualInProgress} 所</td></tr>
@@ -512,16 +513,26 @@ export default function App() {
              setAiMessages([...newMessages, { role: 'ai', content: '⚠️ 尚未偵測到 API Key。請先前往左側選單的「系統：報表匯出與設定」頁面，輸入您的 Gemini API Key 才能喚醒我喔！' }]);
              setIsAILoading(false); return;
         }
-        const systemPrompt = `你是一位專業的「桃園市通學廊道AI戰情特助」。請以繁體中文回答。
+        
+        // 將行政區統計資料打包餵給 AI，擴充它的情境知識 (RAG 架構)
+        const districtContext = kpis.districtCards.filter(d => d.name !== '全市總計').map(d => 
+            `- ${d.name}: 實際歸戶 ${d.actualTotal} 所 (完工 ${d.actualCompleted}, 施工 ${d.actualInProgress}, 規劃 ${d.actualPlanning}, 暫緩 ${d.actualPaused}), 總經費 ${d.totalBudget.toLocaleString()} 萬`
+        ).join('\n');
+
+        const systemPrompt = `你是一位專業的「桃園市通學廊道AI戰情特助」。請以繁體中文、專業且具有法人幕僚風格的語氣回答。
 【當前戰情室資料 Context】
 - 總立案數：${kpis.total} 案
 - 總預算金額：${kpis.totalBudget.toLocaleString()} 萬元
 - 已完工：${kpis.completed} 案 (已完工金額: ${kpis.completedBudget.toLocaleString()} 萬元)
 - 施工中：${kpis.inProgress} 案 (施工中金額: ${kpis.inProgressBudget.toLocaleString()} 萬元)
 - 規劃中：${kpis.planning} 案
-- 實際歸戶學校數：${kpis.actualTotal} 所`;
+- 全市實際歸戶學校數：${kpis.actualTotal} 所
 
-        // 修正：將模型升級至目前最廣泛支援且穩定的 gemini-2.5-flash
+【各行政區實際歸戶進度與經費】
+${districtContext}
+
+請根據以上資料精準回答使用者的問題，若使用者詢問特定區域的進度或花費，請從上述「各行政區實際歸戶進度」中提取數據作答。若超出此資料範圍，請誠實說明系統尚未載入該數據。`;
+
         const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${activeKey}`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ contents: [{ parts: [{ text: userMsg }] }], systemInstruction: { parts: [{ text: systemPrompt }] } })
@@ -538,6 +549,7 @@ export default function App() {
   const openPrintConfig = () => {
       setPrintSelection({
           b1: activeTab === 'dashboard',
+          b1_1: activeTab === 'dashboard',
           b2: activeTab === 'dashboard',
           b3: activeTab === 'dashboard',
           b4: activeTab === 'central',
@@ -553,11 +565,11 @@ export default function App() {
   // 螢幕與列印共用的 JSX 區塊 (模組化拆解)
   // ==========================================
   
-  // [1] 錄案與經費概況總覽
+  // [1] 錄案與經費概況總覽 (上方 6 格)
   const Block1_Overview = () => (
     <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 mb-6 print-border-l-primary print-avoid-break" style={{ borderColor: COLORS.primary }}>
         <h2 className="text-xl font-bold mb-4" style={{ color: COLORS.primary }}>[1] 錄案與經費概況總覽</h2>
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
           <div className="bg-gray-50 p-4 rounded-lg text-center border relative overflow-hidden print-bg-gray-50"><div className="absolute top-0 left-0 w-full h-1 bg-gray-300 print-bg-gray-300"></div><p className="text-sm text-gray-500">帳面錄案</p><p className="text-3xl font-bold">{kpis.total}</p><p className="text-xs text-gray-400 mt-2">總經費 {kpis.totalBudget.toLocaleString()} 萬</p></div>
           <div className="bg-green-50 p-4 rounded-lg text-center border border-green-100 relative print-bg-green-50"><div className="absolute top-0 left-0 w-full h-1 bg-green-500 print-bg-green-500"></div><p className="text-sm text-green-600">已完工</p><p className="text-3xl font-bold text-green-700">{kpis.completed}</p><p className="text-xs text-green-600 mt-2">已投入 {kpis.completedBudget.toLocaleString()} 萬</p></div>
           <div className="bg-blue-50 p-4 rounded-lg text-center border border-blue-100 relative print-bg-blue-50"><div className="absolute top-0 left-0 w-full h-1 bg-blue-500 print-bg-blue-500"></div><p className="text-sm text-blue-600">施工中</p><p className="text-3xl font-bold text-blue-700">{kpis.inProgress}</p><p className="text-xs text-blue-600 mt-2">執行中 {kpis.inProgressBudget.toLocaleString()} 萬</p></div>
@@ -565,15 +577,19 @@ export default function App() {
           <div className="bg-gray-100 p-4 rounded-lg text-center border border-gray-200 print-bg-gray-100"><p className="text-sm text-gray-600">暫緩</p><p className="text-3xl font-bold text-gray-700">{kpis.paused}</p><p className="text-xs mt-2 text-transparent select-none">-</p></div>
           <div className="bg-red-50 p-4 rounded-lg text-center border border-red-100 print-bg-red-50"><p className="text-sm text-red-600">視為重複案</p><p className="text-3xl font-bold text-red-700">{kpis.duplicatedCount}</p><p className="text-xs mt-2 text-transparent select-none">-</p></div>
         </div>
-        <div className="border-t border-gray-200 pt-4">
-            <h3 className="text-md font-bold mb-3 text-gray-700 flex items-center"><Check className="w-5 h-5 mr-1 text-green-500"/> 實際歸戶學校進度 (排除期數衍生案與手動排除件)</h3>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                <div className="bg-gray-800 text-white p-3 rounded-lg text-center print-bg-gray-800 print-text-white"><p className="text-xs text-gray-300 print-text-gray-300">實際學校數</p><p className="text-2xl font-bold">{kpis.actualTotal}</p></div>
-                <div className="bg-green-600 text-white p-3 rounded-lg text-center print-bg-green-600 print-text-white"><p className="text-xs text-green-100 print-text-green-100">實際完工</p><p className="text-2xl font-bold">{kpis.actualCompleted}</p></div>
-                <div className="bg-blue-600 text-white p-3 rounded-lg text-center print-bg-blue-600 print-text-white"><p className="text-xs text-blue-100 print-text-blue-100">實際施工</p><p className="text-2xl font-bold">{kpis.actualInProgress}</p></div>
-                <div className="bg-yellow-500 text-white p-3 rounded-lg text-center print-bg-yellow-500 print-text-white"><p className="text-xs text-yellow-100 print-text-yellow-100">實際規劃</p><p className="text-2xl font-bold">{kpis.actualPlanning}</p></div>
-                <div className="bg-gray-500 text-white p-3 rounded-lg text-center print-bg-gray-500 print-text-white"><p className="text-xs text-gray-100 print-text-gray-100">實際暫緩</p><p className="text-2xl font-bold">{kpis.actualPaused}</p></div>
-            </div>
+    </div>
+  );
+
+  // [1-1] 實際學校數量統計 (下方 5 格)
+  const Block1_1_ActualStats = () => (
+    <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 mb-6 print-avoid-break print-border-l-gray-800" style={{ borderColor: '#1F2937' }}>
+        <h2 className="text-lg font-bold mb-4 text-gray-800 flex items-center"><Check className="w-5 h-5 mr-1 text-green-500"/> [1-1] 實際學校數量統計 (排除期數重複案與手動排除件)</h2>
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div className="bg-gray-800 text-white p-3 rounded-lg text-center print-bg-gray-800 print-text-white"><p className="text-xs text-gray-300 print-text-gray-300">實際學校數</p><p className="text-2xl font-bold">{kpis.actualTotal}</p></div>
+            <div className="bg-green-600 text-white p-3 rounded-lg text-center print-bg-green-600 print-text-white"><p className="text-xs text-green-100 print-text-green-100">實際完工</p><p className="text-2xl font-bold">{kpis.actualCompleted}</p></div>
+            <div className="bg-blue-600 text-white p-3 rounded-lg text-center print-bg-blue-600 print-text-white"><p className="text-xs text-blue-100 print-text-blue-100">實際施工</p><p className="text-2xl font-bold">{kpis.actualInProgress}</p></div>
+            <div className="bg-yellow-500 text-white p-3 rounded-lg text-center print-bg-yellow-500 print-text-white"><p className="text-xs text-yellow-100 print-text-yellow-100">實際規劃</p><p className="text-2xl font-bold">{kpis.actualPlanning}</p></div>
+            <div className="bg-gray-500 text-white p-3 rounded-lg text-center print-bg-gray-500 print-text-white"><p className="text-xs text-gray-100 print-text-gray-100">實際暫緩</p><p className="text-2xl font-bold">{kpis.actualPaused}</p></div>
         </div>
     </div>
   );
@@ -700,8 +716,8 @@ export default function App() {
                             <td className="p-2 text-center font-mono font-bold text-gray-500 bg-gray-50 print-bg-gray-50">{p.itemNumber}</td>
                             <td className="p-2 text-center screen-only" onClick={() => handleToggleExclude(p.id)}><div className="flex items-center justify-center cursor-pointer">{p.isExcluded ? <CheckSquare className="w-5 h-5 text-red-500"/> : <Square className="w-5 h-5 text-gray-300"/>}</div></td>
                             <td className="p-2 text-center">{p.district}</td><td className="p-2 text-xs text-gray-500 text-center">{p.level}</td>
-                            <td className="p-2 font-medium text-blue-600 screen-only cursor-pointer hover:underline" onClick={() => setSelectedProject(p)}>{p.name} {isDuplicateName(p.name) && <span className="ml-1 text-[10px] bg-red-100 text-red-600 px-1 rounded inline-block">衍生案</span>}</td>
-                            <td className="p-2 font-medium text-blue-800 print-only hidden">{p.name} {isDuplicateName(p.name) && <span className="ml-1 text-[10px] text-red-600">(衍生案)</span>}</td>
+                            <td className="p-2 font-medium text-blue-600 screen-only cursor-pointer hover:underline" onClick={() => setSelectedProject(p)}>{p.name} {isDuplicateName(p.name) && <span className="ml-1 text-[10px] bg-red-100 text-red-600 px-1 rounded inline-block">重複案</span>}</td>
+                            <td className="p-2 font-medium text-blue-800 print-only hidden">{p.name} {isDuplicateName(p.name) && <span className="ml-1 text-[10px] text-red-600">(重複案)</span>}</td>
                             <td className="p-2 text-center"><span className={p.status === '已完工' ? 'text-green-600 font-bold bg-green-50 px-2 py-1 rounded print-bg-green-50' : p.status === '暫緩' ? 'text-gray-400' : ''}>{p.status}</span></td>
                             <td className="p-2 text-center">{p.budgetSource1}</td><td className="p-2 text-xs text-gray-500 text-center">{p.budgetSource2}</td><td className="p-2 text-right font-mono font-bold text-gray-700">{p.budgetAmount.toLocaleString()}</td><td className="p-2 text-xs text-gray-600 text-center">{p.agency}</td>
                         </tr>
@@ -712,13 +728,41 @@ export default function App() {
       </div>
   );
 
-  // [8] 115年排程看板
+  // [8] 115年排程看板與數據
   const Block8_Schedule = () => {
      const months = Array.from({length: 12}, (_, i) => i + 1);
      const scheduledProjects = projects.filter(p => p.scheduleMonth);
+     const unscheduledProjects = projects.filter(p => !p.scheduleMonth && p.status !== '已完工' && p.status !== '暫緩' && !p.isExcluded);
+     
+     const targetCount = 120;
+     const actualCompleted = kpis.actualCompleted;
+     const progressPercent = Math.min(100, Math.round((actualCompleted / targetCount) * 100));
+
      return (
         <div className="mb-6 print-avoid-break">
-            <h2 className="text-lg font-bold mb-3 border-l-4 pl-2" style={{ borderColor: COLORS.ecoGreen }}>[8] 115年度施工排程總表</h2>
+            <h2 className="text-lg font-bold mb-3 border-l-4 pl-2" style={{ borderColor: COLORS.ecoGreen }}>[8] 115年度施工排程看板</h2>
+            
+            {/* 新增：排程數據戰情卡片 */}
+            <div className="flex space-x-4 mb-4">
+                <div className="flex-1 bg-white border border-gray-200 rounded-lg p-4 shadow-sm print-border">
+                    <div className="text-sm text-gray-500 font-bold mb-1">本市實際已完工 / 120所達標率</div>
+                    <div className="flex items-end justify-between">
+                        <div className="text-3xl font-black text-green-600">{actualCompleted} <span className="text-lg text-gray-400 font-normal">/ {targetCount} 所</span></div>
+                        <div className="text-sm font-bold text-green-500 bg-green-50 px-2 py-1 rounded">{progressPercent}%</div>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2 mt-3 print-bg-gray-200">
+                        <div className="bg-green-500 h-2 rounded-full print-bg-green-500" style={{ width: `${progressPercent}%` }}></div>
+                    </div>
+                </div>
+                <div className="flex-1 bg-white border border-gray-200 rounded-lg p-4 shadow-sm print-border">
+                    <div className="text-sm text-gray-500 font-bold mb-1">排程口袋名單 (待指派月份)</div>
+                    <div className="flex items-end justify-between">
+                        <div className="text-3xl font-black text-teal-600">{unscheduledProjects.length} <span className="text-lg text-gray-400 font-normal">案</span></div>
+                    </div>
+                    <p className="text-xs text-gray-400 mt-2">系統將自動扣除已完工、暫緩或已排程之案件</p>
+                </div>
+            </div>
+
             <div className="flex overflow-x-auto p-4 space-x-4 border rounded bg-gray-50 print-table-wrapper print-flex-wrap">
                 {months.map(month => {
                     const mProjects = scheduledProjects.filter(p => p.scheduleMonth === String(month));
@@ -731,7 +775,7 @@ export default function App() {
                                         <div className="font-bold text-teal-800">{p.name}</div><div className="text-xs text-gray-500">{p.district}</div>
                                     </div>
                                 ))}
-                                {mProjects.length === 0 && <div className="text-xs text-center text-gray-400 mt-4">無</div>}
+                                {mProjects.length === 0 && <div className="text-xs text-center text-gray-400 mt-4">尚無排程</div>}
                             </div>
                         </div>
                     )
@@ -748,6 +792,7 @@ export default function App() {
   const renderDashboard = () => (
     <div className="space-y-6 animate-fade-in pb-20">
       <Block1_Overview />
+      <Block1_1_ActualStats />
       <Block2_PieCharts />
       <Block3_DistrictCards />
     </div>
@@ -816,29 +861,33 @@ export default function App() {
 
   const renderSchedule = () => {
      const months = Array.from({length: 12}, (_, i) => i + 1);
+     // 待排程清單 (排除已排程、已完工、暫緩)
      const unscheduledProjects = projects.filter(p => !p.scheduleMonth && p.status !== '已完工' && p.status !== '暫緩');
 
      return (
         <div className="bg-white p-6 rounded-xl shadow-sm h-full flex flex-col animate-fade-in pb-20">
-            <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center"><Calendar className="mr-2"/> 115年度施工排程總表</h2>
-            <div className="mb-4 bg-yellow-50 p-3 rounded border border-yellow-200 text-sm flex items-center"><AlertCircle className="w-4 h-4 text-yellow-600 mr-2"/> 請在下方待排程清單中，為專案選擇預計進場月份。</div>
-            <div className="flex-1 overflow-auto border rounded bg-gray-50 flex">
-                <div className="w-64 bg-white border-r p-4 flex-shrink-0 overflow-y-auto shadow-inner">
-                    <h3 className="font-bold text-gray-600 mb-3 border-b pb-2">待排程案件 ({unscheduledProjects.length})</h3>
+            <Block8_Schedule />
+            <div className="flex-1 overflow-auto border rounded bg-gray-50 flex mt-4">
+                <div className="w-80 bg-white border-r p-4 flex-shrink-0 overflow-y-auto shadow-inner">
+                    <h3 className="font-bold text-gray-600 mb-3 border-b pb-2 flex items-center justify-between">
+                        <span>待排程清單</span>
+                        <span className="bg-teal-100 text-teal-800 text-xs px-2 py-1 rounded-full">{unscheduledProjects.length} 案</span>
+                    </h3>
                     <div className="space-y-2">
                         {unscheduledProjects.map(p => (
-                            <div key={p.id} className="p-2 border rounded bg-gray-50 text-sm hover:shadow-md transition">
-                                <div className="font-bold">{p.name}</div>
-                                <div className="text-xs text-gray-500 flex justify-between mt-1 items-center">
+                            <div key={p.id} className="p-2 border rounded bg-gray-50 text-sm hover:shadow-md transition border-l-4 border-l-teal-400">
+                                <div className="font-bold text-gray-800">{p.name} <span className="text-[10px] text-gray-400 font-normal bg-gray-200 px-1 rounded">{p.status}</span></div>
+                                <div className="text-xs text-gray-500 flex justify-between mt-2 items-center">
                                     <span>{p.district}</span>
-                                    <select className="border rounded bg-white p-1" value="" onChange={(e) => handleUpdateProject(p.id, 'scheduleMonth', e.target.value)}><option value="">指派月份</option>{months.map(m => <option key={m} value={m}>{m}月</option>)}</select>
+                                    <select className="border border-teal-200 rounded bg-white p-1 text-teal-700 font-bold focus:ring-2 focus:ring-teal-500 outline-none" value="" onChange={(e) => handleUpdateProject(p.id, 'scheduleMonth', e.target.value)}><option value="">指派進場月份</option>{months.map(m => <option key={m} value={m}>{m}月</option>)}</select>
                                 </div>
                             </div>
                         ))}
+                        {unscheduledProjects.length === 0 && <div className="text-center text-gray-400 py-10">所有案件皆已排程完畢</div>}
                     </div>
                 </div>
-                <div className="flex-1 overflow-hidden p-2">
-                     <Block8_Schedule />
+                <div className="flex-1 bg-gray-100/50 flex items-center justify-center text-gray-400 text-sm">
+                    請在左側清單為案件指派月份，資料將自動更新至上方看板。
                 </div>
             </div>
         </div>
@@ -984,7 +1033,8 @@ export default function App() {
                  <div className="space-y-6 max-h-[50vh] overflow-y-auto pr-4 custom-scrollbar">
                      <div>
                          <h4 className="font-bold text-pink-700 mb-2 border-b border-pink-100 pb-1">【戰情儀錶板】</h4>
-                         <label className="flex items-center space-x-2 py-1 cursor-pointer hover:bg-gray-50 rounded px-2"><input type="checkbox" className="w-4 h-4 text-pink-600 rounded border-gray-300 focus:ring-pink-500" checked={printSelection.b1} onChange={e=>setPrintSelection({...printSelection, b1: e.target.checked})} /><span>[1] 錄案與經費概況總覽 (總表與實際歸戶卡片)</span></label>
+                         <label className="flex items-center space-x-2 py-1 cursor-pointer hover:bg-gray-50 rounded px-2"><input type="checkbox" className="w-4 h-4 text-pink-600 rounded border-gray-300 focus:ring-pink-500" checked={printSelection.b1} onChange={e=>setPrintSelection({...printSelection, b1: e.target.checked})} /><span>[1] 錄案與經費概況總覽 (上方六宮格)</span></label>
+                         <label className="flex items-center space-x-2 py-1 cursor-pointer hover:bg-gray-50 rounded px-2"><input type="checkbox" className="w-4 h-4 text-pink-600 rounded border-gray-300 focus:ring-pink-500" checked={printSelection.b1_1} onChange={e=>setPrintSelection({...printSelection, b1_1: e.target.checked})} /><span>[1-1] 實際學校數量統計 (下方歸戶五宮格)</span></label>
                          <label className="flex items-center space-x-2 py-1 cursor-pointer hover:bg-gray-50 rounded px-2"><input type="checkbox" className="w-4 h-4 text-pink-600 rounded border-gray-300 focus:ring-pink-500" checked={printSelection.b2} onChange={e=>setPrintSelection({...printSelection, b2: e.target.checked})} /><span>[2] 預算來源分析圓餅圖</span></label>
                          <label className="flex items-center space-x-2 py-1 cursor-pointer hover:bg-gray-50 rounded px-2"><input type="checkbox" className="w-4 h-4 text-pink-600 rounded border-gray-300 focus:ring-pink-500" checked={printSelection.b3} onChange={e=>setPrintSelection({...printSelection, b3: e.target.checked})} /><span>[3] 行政區進度與經費卡片</span></label>
                      </div>
@@ -1000,7 +1050,7 @@ export default function App() {
                      </div>
                      <div>
                          <h4 className="font-bold text-green-700 mb-2 border-b border-green-100 pb-1">【115年排程】</h4>
-                         <label className="flex items-center space-x-2 py-1 cursor-pointer hover:bg-gray-50 rounded px-2"><input type="checkbox" className="w-4 h-4 text-green-600 rounded border-gray-300 focus:ring-green-500" checked={printSelection.b8} onChange={e=>setPrintSelection({...printSelection, b8: e.target.checked})} /><span>[8] 115年度施工排程月份看板</span></label>
+                         <label className="flex items-center space-x-2 py-1 cursor-pointer hover:bg-gray-50 rounded px-2"><input type="checkbox" className="w-4 h-4 text-green-600 rounded border-gray-300 focus:ring-green-500" checked={printSelection.b8} onChange={e=>setPrintSelection({...printSelection, b8: e.target.checked})} /><span>[8] 115年度施工排程看板與月份圖表</span></label>
                      </div>
                  </div>
 
@@ -1009,7 +1059,6 @@ export default function App() {
                      <button 
                          onClick={() => {
                              setIsPrintModalOpen(false);
-                             // 延遲 300 毫秒，讓視窗關閉的動畫跑完再觸發列印
                              setTimeout(() => window.print(), 300);
                          }} 
                          className="px-6 py-2 rounded-lg font-bold text-white bg-gray-900 hover:bg-black shadow-lg transition-transform hover:scale-105 flex items-center"
@@ -1028,12 +1077,13 @@ export default function App() {
     <div className="print-only text-black font-sans bg-white print-content-reset">
         {/* 列印表頭 */}
         <div className="text-center pb-4 mb-6 border-b-2 border-gray-800">
-            <h1 className="text-3xl font-black tracking-widest text-gray-900 mb-2">桃園市 通學廊道專案戰情報告</h1>
+            <h1 className="text-3xl font-black tracking-widest text-gray-900 mb-2">桃園市通學廊道戰情報告</h1>
             <p className="text-sm text-gray-600 font-bold">資料統計日期：{currentDate}</p>
         </div>
 
         {/* 依據勾選狀態，依序渲染模組 */}
         {printSelection.b1 && <Block1_Overview />}
+        {printSelection.b1_1 && <Block1_1_ActualStats />}
         {printSelection.b2 && <Block2_PieCharts />}
         {printSelection.b3 && <Block3_DistrictCards />}
         {printSelection.b4 && <Block4_CentralStats />}
