@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
-import { LayoutDashboard, Building2, Calendar, Database, Download, Upload, Save, MapPin, Image as ImageIcon, Search, AlertCircle, Edit, CheckSquare, Square, Check, MessageCircle, X, Send, Filter, FileText, Clock, History, Key } from 'lucide-react';
+import { LayoutDashboard, Building2, Calendar, Database, Download, Upload, Save, MapPin, Image as ImageIcon, Search, AlertCircle, Edit, CheckSquare, Square, Check, MessageCircle, X, Send, Filter, FileText, Clock, History, Key, Printer } from 'lucide-react';
 
 // --- 桃園市品牌色系 ---
 const COLORS = {
@@ -20,6 +20,7 @@ const STATUSES = ['已完工', '施工中', '規劃中', '暫緩'];
 
 // --- 系統更新日誌資料 ---
 const CHANGELOG = [
+  { date: '2026-03-13', version: 'v1.6.0', notes: ['修復 Gemini API 模型權限問題 (切換至 1.5-flash)', '新增全域 A4 視窗截圖/PDF 匯出功能 (2cm邊界)'] },
   { date: '2026-03-13', version: 'v1.5.0', notes: ['新增 Gemini API Key 本機安全儲存介面', '支援外部 Vercel 部署之 AI 連線功能'] },
   { date: '2026-03-13', version: 'v1.4.0', notes: ['新增即時日期顯示', '新增系統更新日誌區塊', '優化介面排版'] },
   { date: '2026-03-12', version: 'v1.3.0', notes: ['新增 A4 Word 匯出功能', '實作羅浮學區跨層級整併邏輯'] },
@@ -549,8 +550,7 @@ export default function App() {
     setIsAILoading(true);
 
     try {
-        // API Key 取得邏輯：確保無論部署至何處，都能透過使用者設定注入金鑰
-        const apiKey = ""; // 預留給環境注入 (如 Canvas)
+        const apiKey = ""; 
         const activeKey = userApiKey || apiKey;
 
         if (!activeKey) {
@@ -570,7 +570,8 @@ export default function App() {
 - 實際歸戶學校數：${kpis.actualTotal} 所
 請針對使用者的提問給出清晰、有邏輯的分析。`;
 
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${activeKey}`, {
+        // 修正：將模型變更為穩定全面開放的 gemini-1.5-flash，解決找不到預覽版模型的問題
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${activeKey}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -598,14 +599,14 @@ export default function App() {
 
 
   const renderDashboard = () => (
-    <div className="space-y-6 animate-fade-in pb-20">
+    <div className="space-y-6 animate-fade-in pb-20 print-layout">
       <div className="bg-white p-6 rounded-xl shadow-sm border-l-4" style={{ borderColor: COLORS.primary }}>
         <h2 className="text-xl font-bold mb-4" style={{ color: COLORS.primary }}>錄案與經費概況</h2>
         <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-6">
-          <div className="bg-gray-50 p-4 rounded-lg text-center border relative overflow-hidden group"><div className="absolute top-0 left-0 w-full h-1 bg-gray-300"></div><p className="text-sm text-gray-500">帳面錄案</p><p className="text-3xl font-bold">{kpis.total}</p><p className="text-xs text-gray-400 mt-2">總經費 {kpis.totalBudget.toLocaleString()} 萬</p></div>
-          <div className="bg-green-50 p-4 rounded-lg text-center border border-green-100 relative"><div className="absolute top-0 left-0 w-full h-1 bg-green-500"></div><p className="text-sm text-green-600">已完工</p><p className="text-3xl font-bold text-green-700">{kpis.completed}</p><p className="text-xs text-green-600 mt-2">已投入 {kpis.completedBudget.toLocaleString()} 萬</p></div>
-          <div className="bg-blue-50 p-4 rounded-lg text-center border border-blue-100 relative"><div className="absolute top-0 left-0 w-full h-1 bg-blue-500"></div><p className="text-sm text-blue-600">施工中</p><p className="text-3xl font-bold text-blue-700">{kpis.inProgress}</p><p className="text-xs text-blue-600 mt-2">執行中 {kpis.inProgressBudget.toLocaleString()} 萬</p></div>
-          <div className="bg-yellow-50 p-4 rounded-lg text-center border border-yellow-100 relative"><div className="absolute top-0 left-0 w-full h-1 bg-yellow-400"></div><p className="text-sm text-yellow-600">規劃中</p><p className="text-3xl font-bold text-yellow-700">{kpis.planning}</p><p className="text-xs mt-2 text-transparent select-none">-</p></div>
+          <div className="bg-gray-50 p-4 rounded-lg text-center border relative overflow-hidden group"><div className="absolute top-0 left-0 w-full h-1 bg-gray-300 print-bg-force"></div><p className="text-sm text-gray-500">帳面錄案</p><p className="text-3xl font-bold">{kpis.total}</p><p className="text-xs text-gray-400 mt-2">總經費 {kpis.totalBudget.toLocaleString()} 萬</p></div>
+          <div className="bg-green-50 p-4 rounded-lg text-center border border-green-100 relative"><div className="absolute top-0 left-0 w-full h-1 bg-green-500 print-bg-force"></div><p className="text-sm text-green-600">已完工</p><p className="text-3xl font-bold text-green-700">{kpis.completed}</p><p className="text-xs text-green-600 mt-2">已投入 {kpis.completedBudget.toLocaleString()} 萬</p></div>
+          <div className="bg-blue-50 p-4 rounded-lg text-center border border-blue-100 relative"><div className="absolute top-0 left-0 w-full h-1 bg-blue-500 print-bg-force"></div><p className="text-sm text-blue-600">施工中</p><p className="text-3xl font-bold text-blue-700">{kpis.inProgress}</p><p className="text-xs text-blue-600 mt-2">執行中 {kpis.inProgressBudget.toLocaleString()} 萬</p></div>
+          <div className="bg-yellow-50 p-4 rounded-lg text-center border border-yellow-100 relative"><div className="absolute top-0 left-0 w-full h-1 bg-yellow-400 print-bg-force"></div><p className="text-sm text-yellow-600">規劃中</p><p className="text-3xl font-bold text-yellow-700">{kpis.planning}</p><p className="text-xs mt-2 text-transparent select-none">-</p></div>
           <div className="bg-gray-100 p-4 rounded-lg text-center border border-gray-200"><p className="text-sm text-gray-600">暫緩</p><p className="text-3xl font-bold text-gray-700">{kpis.paused}</p><p className="text-xs mt-2 text-transparent select-none">-</p></div>
           <div className="bg-red-50 p-4 rounded-lg text-center border border-red-100"><p className="text-sm text-red-600">視為重複案</p><p className="text-3xl font-bold text-red-700">{kpis.duplicatedCount}</p><p className="text-xs mt-2 text-transparent select-none">-</p></div>
         </div>
@@ -613,16 +614,16 @@ export default function App() {
         <div className="border-t border-gray-200 pt-4">
             <h3 className="text-md font-bold mb-3 text-gray-700 flex items-center"><Check className="w-5 h-5 mr-1 text-green-500"/> 實際歸戶學校進度 (排除期數衍生案與手動排除件)</h3>
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            <div className="bg-gray-800 text-white p-3 rounded-lg text-center"><p className="text-xs text-gray-300">實際學校數</p><p className="text-2xl font-bold">{kpis.actualTotal}</p></div>
-            <div className="bg-green-600 text-white p-3 rounded-lg text-center"><p className="text-xs text-green-100">實際完工</p><p className="text-2xl font-bold">{kpis.actualCompleted}</p></div>
-            <div className="bg-blue-600 text-white p-3 rounded-lg text-center"><p className="text-xs text-blue-100">實際施工</p><p className="text-2xl font-bold">{kpis.actualInProgress}</p></div>
-            <div className="bg-yellow-500 text-white p-3 rounded-lg text-center"><p className="text-xs text-yellow-100">實際規劃</p><p className="text-2xl font-bold">{kpis.actualPlanning}</p></div>
-            <div className="bg-gray-500 text-white p-3 rounded-lg text-center"><p className="text-xs text-gray-100">實際暫緩</p><p className="text-2xl font-bold">{kpis.actualPaused}</p></div>
+            <div className="bg-gray-800 text-white p-3 rounded-lg text-center print-bg-gray"><p className="text-xs text-gray-300">實際學校數</p><p className="text-2xl font-bold">{kpis.actualTotal}</p></div>
+            <div className="bg-green-600 text-white p-3 rounded-lg text-center print-bg-green"><p className="text-xs text-green-100">實際完工</p><p className="text-2xl font-bold">{kpis.actualCompleted}</p></div>
+            <div className="bg-blue-600 text-white p-3 rounded-lg text-center print-bg-blue"><p className="text-xs text-blue-100">實際施工</p><p className="text-2xl font-bold">{kpis.actualInProgress}</p></div>
+            <div className="bg-yellow-500 text-white p-3 rounded-lg text-center print-bg-yellow"><p className="text-xs text-yellow-100">實際規劃</p><p className="text-2xl font-bold">{kpis.actualPlanning}</p></div>
+            <div className="bg-gray-500 text-white p-3 rounded-lg text-center print-bg-gray500"><p className="text-xs text-gray-100">實際暫緩</p><p className="text-2xl font-bold">{kpis.actualPaused}</p></div>
             </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 print-page-break">
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
           <h2 className="text-lg font-bold mb-4">預算來源分析 (單位: 萬元)</h2>
           <div className="h-64"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={kpis.budgetSourceData} cx="50%" cy="50%" outerRadius={80} fill="#8884d8" dataKey="value" label={({name, value, percent}) => `${name} ${value.toLocaleString()}萬 (${(percent * 100).toFixed(0)}%)`}>{kpis.budgetSourceData.map((entry, index) => <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />)}</Pie><Tooltip formatter={(value) => [value.toLocaleString() + ' 萬', '經費']} /><Legend /></PieChart></ResponsiveContainer></div>
@@ -633,18 +634,18 @@ export default function App() {
         </div>
       </div>
 
-      <div className="bg-white p-6 rounded-xl shadow-sm">
+      <div className="bg-white p-6 rounded-xl shadow-sm print-page-break">
          <h2 className="text-lg font-bold mb-4">行政區進度與經費卡片 (實際歸戶後)</h2>
          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
             {kpis.districtCards.map(card => (
-                <div key={card.name} className={`p-4 rounded-xl border shadow-sm transition-transform hover:-translate-y-1 ${card.name === '全市總計' ? 'bg-pink-50 border-pink-200' : 'bg-white border-gray-200'}`}>
+                <div key={card.name} className={`p-4 rounded-xl border shadow-sm transition-transform hover:-translate-y-1 ${card.name === '全市總計' ? 'bg-pink-50 border-pink-200' : 'bg-white border-gray-200'} print-avoid-break`}>
                     <h3 className={`font-bold text-lg mb-3 pb-2 border-b ${card.name === '全市總計' ? 'text-pink-700 border-pink-200' : 'text-gray-800 border-gray-100'}`}>{card.name}</h3>
                     <div className="space-y-2">
                         <div className="flex justify-between items-center text-sm"><span className="font-semibold text-gray-700">錄案: {card.actualTotal} 所</span><span className="font-bold text-gray-800">{card.totalBudget.toLocaleString()} 萬</span></div>
-                        <div className="flex justify-between items-center text-sm bg-green-50 px-2 py-1 rounded"><span className="text-green-700 font-medium">完工: {card.actualCompleted} 所</span><span className="text-green-800 font-semibold">{card.completedBudget.toLocaleString()} 萬</span></div>
-                        <div className="flex justify-between items-center text-sm bg-blue-50 px-2 py-1 rounded"><span className="text-blue-700 font-medium">施工: {card.actualInProgress} 所</span><span className="text-blue-800 font-semibold">{card.inProgressBudget.toLocaleString()} 萬</span></div>
-                        <div className="flex justify-between items-center text-sm bg-yellow-50 px-2 py-1 rounded"><span className="text-yellow-700 font-medium">規劃: {card.actualPlanning} 所</span><span className="text-yellow-800 font-semibold">{card.planningBudget.toLocaleString()} 萬</span></div>
-                        <div className="flex justify-between items-center text-sm bg-gray-50 px-2 py-1 rounded"><span className="text-gray-500 font-medium">暫緩: {card.actualPaused} 所</span><span className="text-gray-600 font-semibold">{card.pausedBudget.toLocaleString()} 萬</span></div>
+                        <div className="flex justify-between items-center text-sm bg-green-50 px-2 py-1 rounded print-bg-force"><span className="text-green-700 font-medium">完工: {card.actualCompleted} 所</span><span className="text-green-800 font-semibold">{card.completedBudget.toLocaleString()} 萬</span></div>
+                        <div className="flex justify-between items-center text-sm bg-blue-50 px-2 py-1 rounded print-bg-force"><span className="text-blue-700 font-medium">施工: {card.actualInProgress} 所</span><span className="text-blue-800 font-semibold">{card.inProgressBudget.toLocaleString()} 萬</span></div>
+                        <div className="flex justify-between items-center text-sm bg-yellow-50 px-2 py-1 rounded print-bg-force"><span className="text-yellow-700 font-medium">規劃: {card.actualPlanning} 所</span><span className="text-yellow-800 font-semibold">{card.planningBudget.toLocaleString()} 萬</span></div>
+                        <div className="flex justify-between items-center text-sm bg-gray-50 px-2 py-1 rounded print-bg-force"><span className="text-gray-500 font-medium">暫緩: {card.actualPaused} 所</span><span className="text-gray-600 font-semibold">{card.pausedBudget.toLocaleString()} 萬</span></div>
                     </div>
                 </div>
             ))}
@@ -662,36 +663,40 @@ export default function App() {
     const motcBudget = motcCases.reduce((sum, p) => sum + (Number(p.budgetAmount) || 0), 0);
 
     return (
-      <div className="bg-white p-6 rounded-xl shadow-sm animate-fade-in pb-20">
-        <div className="flex justify-between items-center mb-6 border-b pb-4">
+      <div className="bg-white p-6 rounded-xl shadow-sm animate-fade-in pb-20 print-layout">
+        <div className="flex justify-between items-center mb-6 border-b pb-4 print-hide">
             <div><h2 className="text-xl font-bold flex items-center" style={{ color: COLORS.techBlue }}><Building2 className="w-6 h-6 mr-2"/> 中央補助專案管理</h2><p className="text-sm text-gray-500 mt-1">勾選「不核定」將自動自上方統計與預算中扣除。</p></div>
             <select className="border-2 border-blue-200 p-2 rounded-lg font-bold outline-none focus:ring-2 focus:ring-blue-300" value={filterDist} onChange={e => setFilterDist(e.target.value)}><option value="All">所有行政區篩選</option>{DISTRICTS.map(d => <option key={d} value={d}>{d}</option>)}</select>
         </div>
+        
+        {/* 列印專用標題 */}
+        <h2 className="hidden print-block text-2xl font-bold mb-4 text-center" style={{ color: COLORS.techBlue }}>桃園市 中央補助專案列表 ({filterDist === 'All' ? '全市' : filterDist})</h2>
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 p-5 rounded-xl shadow-sm flex justify-between items-center">
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 p-5 rounded-xl shadow-sm flex justify-between items-center print-border print-bg-force">
                 <div><h3 className="text-blue-800 font-bold text-lg mb-1">國土署 (核定有效案件)</h3><p className="text-blue-600 text-sm">已排除不核定案件</p></div>
                 <div className="text-right"><p className="text-3xl font-black text-blue-900">{nlmaCases.length} <span className="text-lg font-normal">案</span></p><p className="text-blue-700 font-mono font-bold mt-1">經費: {nlmaBudget.toLocaleString()} 萬元</p></div>
             </div>
-            <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 p-5 rounded-xl shadow-sm flex justify-between items-center">
+            <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 p-5 rounded-xl shadow-sm flex justify-between items-center print-border print-bg-force">
                 <div><h3 className="text-emerald-800 font-bold text-lg mb-1">交通部/公路局 (核定有效案件)</h3><p className="text-emerald-600 text-sm">已排除不核定案件</p></div>
                 <div className="text-right"><p className="text-3xl font-black text-emerald-900">{motcCases.length} <span className="text-lg font-normal">案</span></p><p className="text-emerald-700 font-mono font-bold mt-1">經費: {motcBudget.toLocaleString()} 萬元</p></div>
             </div>
         </div>
-        <div className="overflow-x-auto border rounded-lg shadow-inner">
-          <table className="w-full text-sm text-left border-collapse min-w-[1000px]">
-            <thead className="bg-gray-100 text-gray-700 uppercase">
+        <div className="overflow-x-auto border rounded-lg shadow-inner print-table-wrapper">
+          <table className="w-full text-sm text-left border-collapse min-w-[1000px] print-table">
+            <thead className="bg-gray-100 text-gray-700 uppercase print-bg-force">
               <tr>
-                <th className="p-3 border text-center text-red-600 font-bold w-20">不核定<br/><span className="text-[10px] text-gray-500 font-normal">(打勾排除)</span></th>
-                <th className="p-3 border">行政區</th><th className="p-3 border">計畫/學校名稱</th><th className="p-3 border">補助單位</th><th className="p-3 border text-right">提案/核定經費(萬)</th><th className="p-3 border">執行進度</th><th className="p-3 border">四大亮點指標 (勾選)</th>
+                <th className="p-3 border text-center text-red-600 font-bold w-20 print-hide">不核定</th>
+                <th className="p-3 border">行政區</th><th className="p-3 border">計畫/學校名稱</th><th className="p-3 border">補助單位</th><th className="p-3 border text-right">經費(萬)</th><th className="p-3 border">進度</th><th className="p-3 border">亮點指標</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map(p => (
-                <tr key={p.id} className={`border-b transition-colors ${p.isNotApproved ? 'bg-gray-100 opacity-60' : 'hover:bg-blue-50'}`}>
-                  <td className="p-3 border text-center" onClick={() => handleToggleNotApproved(p.id)}><div className="flex justify-center cursor-pointer">{p.isNotApproved ? <CheckSquare className="w-6 h-6 text-red-500 drop-shadow-md"/> : <Square className="w-6 h-6 text-gray-300 hover:text-red-300"/>}</div></td>
+                <tr key={p.id} className={`border-b transition-colors print-avoid-break ${p.isNotApproved ? 'bg-gray-100 opacity-60 print-hide' : 'hover:bg-blue-50'}`}>
+                  <td className="p-3 border text-center print-hide" onClick={() => handleToggleNotApproved(p.id)}><div className="flex justify-center cursor-pointer">{p.isNotApproved ? <CheckSquare className="w-6 h-6 text-red-500 drop-shadow-md"/> : <Square className="w-6 h-6 text-gray-300 hover:text-red-300"/>}</div></td>
                   <td className="p-3 border font-medium text-gray-700">{p.district}</td><td className={`p-3 border font-bold ${p.isNotApproved ? 'line-through text-gray-500' : 'text-blue-800'}`}>{p.name}</td><td className="p-3 border">{p.budgetSource2}</td><td className={`p-3 border text-right font-mono font-bold ${p.isNotApproved ? 'text-gray-500' : 'text-pink-600'}`}>{p.budgetAmount.toLocaleString()}</td>
-                  <td className="p-3 border"><span className={`px-2 py-1 rounded-full text-xs font-semibold ${p.status === '已完工' ? 'bg-green-100 text-green-700' : p.status === '施工中' ? 'bg-blue-100 text-blue-700' : 'bg-gray-200'}`}>{p.status}</span></td>
-                  <td className="p-3 border"><div className="flex space-x-3 opacity-90"><label className="flex items-center space-x-1 cursor-pointer" onClick={() => handleFeatureToggle(p.id, 'pole')}>{p.features?.pole ? <CheckSquare className="w-4 h-4 text-blue-600"/> : <Square className="w-4 h-4 text-gray-400"/>}<span className="text-xs">電桿地下</span></label><label className="flex items-center space-x-1 cursor-pointer" onClick={() => handleFeatureToggle(p.id, 'shelter')}>{p.features?.shelter ? <CheckSquare className="w-4 h-4 text-blue-600"/> : <Square className="w-4 h-4 text-gray-400"/>}<span className="text-xs">候車亭</span></label><label className="flex items-center space-x-1 cursor-pointer" onClick={() => handleFeatureToggle(p.id, 'light')}>{p.features?.light ? <CheckSquare className="w-4 h-4 text-blue-600"/> : <Square className="w-4 h-4 text-gray-400"/>}<span className="text-xs">雙色溫路燈</span></label><label className="flex items-center space-x-1 cursor-pointer" onClick={() => handleFeatureToggle(p.id, 'pickup')}>{p.features?.pickup ? <CheckSquare className="w-4 h-4 text-blue-600"/> : <Square className="w-4 h-4 text-gray-400"/>}<span className="text-xs">接送區</span></label></div></td>
+                  <td className="p-3 border"><span className={`px-2 py-1 rounded-full text-xs font-semibold ${p.status === '已完工' ? 'bg-green-100 text-green-700' : p.status === '施工中' ? 'bg-blue-100 text-blue-700' : 'bg-gray-200'} print-bg-force`}>{p.status}</span></td>
+                  <td className="p-3 border"><div className="flex space-x-3 opacity-90"><label className="flex items-center space-x-1"><span className="text-xs">{p.features?.pole ? '☑' : '☐'} 電桿地下</span></label><label className="flex items-center space-x-1"><span className="text-xs">{p.features?.shelter ? '☑' : '☐'} 候車亭</span></label><label className="flex items-center space-x-1"><span className="text-xs">{p.features?.light ? '☑' : '☐'} 雙色溫路燈</span></label><label className="flex items-center space-x-1"><span className="text-xs">{p.features?.pickup ? '☑' : '☐'} 接送區</span></label></div></td>
                 </tr>
               ))}
               {filtered.length === 0 && <tr><td colSpan="7" className="text-center p-8 text-gray-500 font-bold">此區目前無中央補助案件</td></tr>}
@@ -704,8 +709,8 @@ export default function App() {
 
   const renderSchools = () => {
     return (
-      <div className="bg-white p-6 rounded-xl shadow-sm animate-fade-in flex flex-col h-[85vh]">
-        <div className="flex justify-between items-center mb-4 flex-shrink-0">
+      <div className="bg-white p-6 rounded-xl shadow-sm animate-fade-in flex flex-col h-[85vh] print-layout">
+        <div className="flex justify-between items-center mb-4 flex-shrink-0 print-hide">
             <h2 className="text-xl font-bold text-gray-800">學校總表資料庫 (點擊名稱可編輯)</h2>
             <div className="flex items-center space-x-4">
                 <select className="border-2 border-pink-200 p-2 rounded-lg text-sm font-bold focus:ring-2 focus:ring-pink-300 outline-none" value={schoolDistrictFilter} onChange={e => setSchoolDistrictFilter(e.target.value)}><option value="All">全市所有行政區</option>{DISTRICTS.map(d => <option key={d} value={d}>{d}</option>)}</select>
@@ -713,32 +718,34 @@ export default function App() {
             </div>
         </div>
 
-        <div className="text-xs text-gray-500 mb-2 flex items-center"><Filter className="w-3 h-3 mr-1"/> 提示：點擊下方卡片，可直接篩選該狀態的學校清單</div>
+        <h2 className="hidden print-block text-2xl font-bold mb-4 text-center">桃園市 學校總表清單 ({schoolDistrictFilter === 'All' ? '全市' : schoolDistrictFilter})</h2>
+
+        <div className="text-xs text-gray-500 mb-2 flex items-center print-hide"><Filter className="w-3 h-3 mr-1"/> 提示：點擊下方卡片，可直接篩選該狀態的學校清單</div>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4 flex-shrink-0">
-            <div onClick={() => setTableStatusFilter('All')} className={`p-3 rounded-lg text-center shadow-sm cursor-pointer transition-all transform hover:scale-105 border-2 ${tableStatusFilter === 'All' ? 'bg-gray-800 text-white border-gray-900 ring-2 ring-offset-2 ring-gray-300' : 'bg-gray-100 text-gray-600 border-transparent hover:bg-gray-200'}`}><div className="text-xs opacity-80 font-medium mb-1">實際錄案數 (顯示全部)</div><div className="text-2xl font-black">{tableStats.actualTotal}</div></div>
-            <div onClick={() => setTableStatusFilter('已完工')} className={`p-3 rounded-lg text-center shadow-sm cursor-pointer transition-all transform hover:scale-105 border-2 ${tableStatusFilter === '已完工' ? 'bg-green-600 text-white border-green-700 ring-2 ring-offset-2 ring-green-300' : 'bg-green-50 text-green-800 border-green-200 hover:bg-green-100'}`}><div className="text-xs opacity-90 font-bold mb-1">實際完工</div><div className="text-2xl font-black">{tableStats.actualCompleted}</div></div>
-            <div onClick={() => setTableStatusFilter('施工中')} className={`p-3 rounded-lg text-center shadow-sm cursor-pointer transition-all transform hover:scale-105 border-2 ${tableStatusFilter === '施工中' ? 'bg-blue-600 text-white border-blue-700 ring-2 ring-offset-2 ring-blue-300' : 'bg-blue-50 text-blue-800 border-blue-200 hover:bg-blue-100'}`}><div className="text-xs opacity-90 font-bold mb-1">實際施工</div><div className="text-2xl font-black">{tableStats.actualInProgress}</div></div>
-            <div onClick={() => setTableStatusFilter('規劃中')} className={`p-3 rounded-lg text-center shadow-sm cursor-pointer transition-all transform hover:scale-105 border-2 ${tableStatusFilter === '規劃中' ? 'bg-yellow-500 text-white border-yellow-600 ring-2 ring-offset-2 ring-yellow-300' : 'bg-yellow-50 text-yellow-800 border-yellow-200 hover:bg-yellow-100'}`}><div className="text-xs opacity-90 font-bold mb-1">實際規劃</div><div className="text-2xl font-black">{tableStats.actualPlanning}</div></div>
-            <div onClick={() => setTableStatusFilter('暫緩')} className={`p-3 rounded-lg text-center shadow-sm cursor-pointer transition-all transform hover:scale-105 border-2 ${tableStatusFilter === '暫緩' ? 'bg-gray-500 text-white border-gray-600 ring-2 ring-offset-2 ring-gray-300' : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'}`}><div className="text-xs opacity-90 font-bold mb-1">實際暫緩</div><div className="text-2xl font-black">{tableStats.actualPaused}</div></div>
+            <div onClick={() => setTableStatusFilter('All')} className={`p-3 rounded-lg text-center shadow-sm cursor-pointer transition-all transform hover:scale-105 border-2 ${tableStatusFilter === 'All' ? 'bg-gray-800 text-white border-gray-900 ring-2 ring-offset-2 ring-gray-300 print-bg-gray' : 'bg-gray-100 text-gray-600 border-transparent hover:bg-gray-200'}`}><div className="text-xs opacity-80 font-medium mb-1">實際錄案數 (顯示全部)</div><div className="text-2xl font-black">{tableStats.actualTotal}</div></div>
+            <div onClick={() => setTableStatusFilter('已完工')} className={`p-3 rounded-lg text-center shadow-sm cursor-pointer transition-all transform hover:scale-105 border-2 ${tableStatusFilter === '已完工' ? 'bg-green-600 text-white border-green-700 ring-2 ring-offset-2 ring-green-300 print-bg-green' : 'bg-green-50 text-green-800 border-green-200 hover:bg-green-100'}`}><div className="text-xs opacity-90 font-bold mb-1">實際完工</div><div className="text-2xl font-black">{tableStats.actualCompleted}</div></div>
+            <div onClick={() => setTableStatusFilter('施工中')} className={`p-3 rounded-lg text-center shadow-sm cursor-pointer transition-all transform hover:scale-105 border-2 ${tableStatusFilter === '施工中' ? 'bg-blue-600 text-white border-blue-700 ring-2 ring-offset-2 ring-blue-300 print-bg-blue' : 'bg-blue-50 text-blue-800 border-blue-200 hover:bg-blue-100'}`}><div className="text-xs opacity-90 font-bold mb-1">實際施工</div><div className="text-2xl font-black">{tableStats.actualInProgress}</div></div>
+            <div onClick={() => setTableStatusFilter('規劃中')} className={`p-3 rounded-lg text-center shadow-sm cursor-pointer transition-all transform hover:scale-105 border-2 ${tableStatusFilter === '規劃中' ? 'bg-yellow-500 text-white border-yellow-600 ring-2 ring-offset-2 ring-yellow-300 print-bg-yellow' : 'bg-yellow-50 text-yellow-800 border-yellow-200 hover:bg-yellow-100'}`}><div className="text-xs opacity-90 font-bold mb-1">實際規劃</div><div className="text-2xl font-black">{tableStats.actualPlanning}</div></div>
+            <div onClick={() => setTableStatusFilter('暫緩')} className={`p-3 rounded-lg text-center shadow-sm cursor-pointer transition-all transform hover:scale-105 border-2 ${tableStatusFilter === '暫緩' ? 'bg-gray-500 text-white border-gray-600 ring-2 ring-offset-2 ring-gray-300 print-bg-gray500' : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'}`}><div className="text-xs opacity-90 font-bold mb-1">實際暫緩</div><div className="text-2xl font-black">{tableStats.actualPaused}</div></div>
         </div>
 
-        <div className="overflow-x-auto overflow-y-auto flex-1 border rounded shadow-inner bg-white">
-            <table className="w-full text-sm text-left relative min-w-[1200px]">
-                <thead className="bg-gray-100 text-gray-700 sticky top-0 z-10 shadow-sm uppercase text-xs">
+        <div className="overflow-x-auto overflow-y-auto flex-1 border rounded shadow-inner bg-white print-table-wrapper">
+            <table className="w-full text-sm text-left relative min-w-[1200px] print-table">
+                <thead className="bg-gray-100 text-gray-700 sticky top-0 z-10 shadow-sm uppercase text-xs print-bg-force">
                     <tr>
-                        <th className="p-3 border-r w-16 text-center">項次</th><th className="p-3 border-r w-24 text-center">排除計算<br/><span className="text-[10px] text-gray-500 font-normal">(不歸戶)</span></th><th className="p-3 border-r">行政區</th><th className="p-3 border-r">層級</th><th className="p-3 border-r">案名(學校)</th><th className="p-3 border-r">狀態</th><th className="p-3 border-r">預算大項</th><th className="p-3 border-r">細項</th><th className="p-3 border-r text-right">經費(萬)</th><th className="p-3 border-r">機關</th><th className="p-3 text-center">操作</th>
+                        <th className="p-3 border-r w-16 text-center">項次</th><th className="p-3 border-r w-24 text-center print-hide">排除計算</th><th className="p-3 border-r">行政區</th><th className="p-3 border-r">層級</th><th className="p-3 border-r">案名(學校)</th><th className="p-3 border-r">狀態</th><th className="p-3 border-r">預算大項</th><th className="p-3 border-r">細項</th><th className="p-3 border-r text-right">經費(萬)</th><th className="p-3 border-r">機關</th><th className="p-3 text-center print-hide">操作</th>
                     </tr>
                 </thead>
                 <tbody className="divide-y">
                     {displayProjects.map(p => (
-                        <tr key={p.id} className={`hover:bg-pink-50 transition-colors ${p.isExcluded ? 'bg-gray-50 opacity-50' : ''}`}>
-                            <td className="p-2 text-center font-mono font-bold text-gray-500 bg-gray-50">{p.itemNumber}</td>
-                            <td className="p-2 text-center" onClick={() => handleToggleExclude(p.id)}><div className="flex items-center justify-center cursor-pointer" title="勾選後，將不列入上方的實際統計數">{p.isExcluded ? <CheckSquare className="w-5 h-5 text-red-500 drop-shadow-sm"/> : <Square className="w-5 h-5 text-gray-300 hover:text-red-300"/>}</div></td>
+                        <tr key={p.id} className={`hover:bg-pink-50 transition-colors print-avoid-break ${p.isExcluded ? 'bg-gray-50 opacity-50 print-hide' : ''}`}>
+                            <td className="p-2 text-center font-mono font-bold text-gray-500 bg-gray-50 print-bg-force">{p.itemNumber}</td>
+                            <td className="p-2 text-center print-hide" onClick={() => handleToggleExclude(p.id)}><div className="flex items-center justify-center cursor-pointer">{p.isExcluded ? <CheckSquare className="w-5 h-5 text-red-500"/> : <Square className="w-5 h-5 text-gray-300 hover:text-red-300"/>}</div></td>
                             <td className="p-2">{p.district}</td><td className="p-2 text-xs text-gray-500">{p.level}</td>
                             <td className="p-2 font-medium text-blue-600 cursor-pointer hover:underline" onClick={() => setSelectedProject(p)}>{p.name} {isDuplicateName(p.name) && <span className="ml-1 text-[10px] bg-red-100 text-red-600 px-1 rounded inline-block">衍生案</span>}</td>
-                            <td className="p-2"><span className={p.status === '已完工' ? 'text-green-600 font-bold bg-green-50 px-2 py-1 rounded' : p.status === '暫緩' ? 'text-gray-400' : ''}>{p.status}</span></td>
+                            <td className="p-2"><span className={p.status === '已完工' ? 'text-green-600 font-bold bg-green-50 px-2 py-1 rounded print-bg-force' : p.status === '暫緩' ? 'text-gray-400' : ''}>{p.status}</span></td>
                             <td className="p-2">{p.budgetSource1}</td><td className="p-2 text-xs text-gray-500">{p.budgetSource2}</td><td className="p-2 text-right font-mono font-bold text-gray-700">{p.budgetAmount.toLocaleString()}</td><td className="p-2 text-xs text-gray-600">{p.agency}</td>
-                            <td className="p-2 text-center text-blue-500 cursor-pointer hover:text-blue-700" onClick={() => setSelectedProject(p)}><Edit className="w-4 h-4 mx-auto"/></td>
+                            <td className="p-2 text-center text-blue-500 cursor-pointer hover:text-blue-700 print-hide" onClick={() => setSelectedProject(p)}><Edit className="w-4 h-4 mx-auto"/></td>
                         </tr>
                     ))}
                     {displayProjects.length === 0 && <tr><td colSpan="11" className="text-center p-12 text-gray-400 font-bold bg-gray-50">此篩選條件下無符合之專案資料</td></tr>}
@@ -747,7 +754,7 @@ export default function App() {
         </div>
 
         {selectedProject && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 animate-fade-in">
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 animate-fade-in print-hide">
                 <div className="bg-white w-[600px] rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
                     <div className="bg-gradient-to-r from-pink-500 to-rose-500 p-4 text-white flex justify-between items-center"><h3 className="font-bold text-lg flex items-center"><Building2 className="mr-2"/> 個案詳細資訊卡</h3><button onClick={() => setSelectedProject(null)} className="text-white hover:text-gray-200 transition-transform hover:scale-110"><X className="w-6 h-6" /></button></div>
                     <div className="p-6 overflow-y-auto flex-1 space-y-4">
@@ -789,11 +796,11 @@ export default function App() {
      const unscheduledProjects = projects.filter(p => !p.scheduleMonth && p.status !== '已完工' && p.status !== '暫緩');
 
      return (
-        <div className="bg-white p-6 rounded-xl shadow-sm h-full flex flex-col animate-fade-in pb-20">
+        <div className="bg-white p-6 rounded-xl shadow-sm h-full flex flex-col animate-fade-in pb-20 print-layout">
             <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center"><Calendar className="mr-2"/> 115年度施工排程總表</h2>
-            <div className="mb-4 bg-yellow-50 p-3 rounded border border-yellow-200 text-sm flex items-center"><AlertCircle className="w-4 h-4 text-yellow-600 mr-2"/> 請在下方待排程清單中，為專案選擇預計進場月份。</div>
-            <div className="flex-1 overflow-auto border rounded bg-gray-50 flex">
-                <div className="w-64 bg-white border-r p-4 flex-shrink-0 overflow-y-auto shadow-inner">
+            <div className="mb-4 bg-yellow-50 p-3 rounded border border-yellow-200 text-sm flex items-center print-hide"><AlertCircle className="w-4 h-4 text-yellow-600 mr-2"/> 請在下方待排程清單中，為專案選擇預計進場月份。</div>
+            <div className="flex-1 overflow-auto border rounded bg-gray-50 flex print-table-wrapper">
+                <div className="w-64 bg-white border-r p-4 flex-shrink-0 overflow-y-auto shadow-inner print-hide">
                     <h3 className="font-bold text-gray-600 mb-3 border-b pb-2">待排程案件 ({unscheduledProjects.length})</h3>
                     <div className="space-y-2">
                         {unscheduledProjects.map(p => (
@@ -808,17 +815,17 @@ export default function App() {
                     </div>
                 </div>
 
-                <div className="flex-1 flex overflow-x-auto p-4 space-x-4">
+                <div className="flex-1 flex overflow-x-auto p-4 space-x-4 print-table">
                     {months.map(month => {
                         const mProjects = scheduledProjects.filter(p => p.scheduleMonth === String(month));
                         return (
-                            <div key={month} className="w-64 flex-shrink-0 bg-white border rounded-lg shadow-sm flex flex-col">
-                                <div className="bg-gradient-to-r from-teal-500 to-emerald-500 p-2 rounded-t-lg text-white font-bold text-center">115年 {month}月</div>
+                            <div key={month} className="w-64 flex-shrink-0 bg-white border rounded-lg shadow-sm flex flex-col print-avoid-break">
+                                <div className="bg-gradient-to-r from-teal-500 to-emerald-500 p-2 rounded-t-lg text-white font-bold text-center print-bg-force print-text-black">115年 {month}月</div>
                                 <div className="p-2 flex-1 overflow-y-auto space-y-2 min-h-[300px] bg-gray-50/50">
                                     {mProjects.map(p => (
                                         <div key={p.id} className="p-2 border border-teal-100 rounded bg-white text-sm relative group shadow-sm">
                                             <div className="font-bold text-teal-800">{p.name}</div><div className="text-xs text-gray-500">{p.district}</div>
-                                            <button className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition" onClick={() => handleUpdateProject(p.id, 'scheduleMonth', '')} title="移出排程">✕</button>
+                                            <button className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition print-hide" onClick={() => handleUpdateProject(p.id, 'scheduleMonth', '')} title="移出排程">✕</button>
                                         </div>
                                     ))}
                                     {mProjects.length === 0 && <div className="text-xs text-center text-gray-400 mt-4">尚無排程</div>}
@@ -833,7 +840,7 @@ export default function App() {
   }
 
   const renderSettings = () => (
-    <div className="max-w-4xl mx-auto space-y-6 animate-fade-in pb-20">
+    <div className="max-w-4xl mx-auto space-y-6 animate-fade-in pb-20 print-hide">
         
         {/* --- AI API Key 設定區塊 --- */}
         <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-purple-500">
@@ -900,8 +907,8 @@ export default function App() {
                 </div>
                 <div className="border border-pink-200 bg-pink-50 p-6 rounded-lg text-center hover:shadow-md transition relative">
                     <FileText className="w-12 h-12 text-pink-500 mx-auto mb-4"/>
-                    <h3 className="font-bold text-pink-800 mb-2">3. 匯出會議報表</h3>
-                    <p className="text-xs text-pink-600 mb-4">產生 A4 格式、2cm 邊界的 Word 檔。</p>
+                    <h3 className="font-bold text-pink-800 mb-2">3. 匯出純文字會議報表</h3>
+                    <p className="text-xs text-pink-600 mb-4">產生以文字表格為主的 Word 檔。</p>
                     <button onClick={exportWord} className="bg-pink-600 text-white px-4 py-2 rounded shadow hover:bg-pink-700 w-full font-bold flex items-center justify-center"><FileText className="w-4 h-4 mr-2"/> 匯出 Word (.doc)</button>
                 </div>
             </div>
@@ -917,7 +924,7 @@ export default function App() {
 
   return (
     <div className="flex h-screen bg-gray-100 font-sans text-gray-800 relative">
-      <aside className="w-64 bg-gray-900 text-white flex flex-col shadow-xl z-20 flex-shrink-0">
+      <aside className="w-64 bg-gray-900 text-white flex flex-col shadow-xl z-20 flex-shrink-0 print-hide">
         <div className="p-6 border-b border-gray-800 flex items-center justify-between">
             <div className="flex items-center">
                 <div className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center mr-3 shadow-lg shadow-pink-500/30">
@@ -933,7 +940,7 @@ export default function App() {
                 { id: 'central', icon: Building2, label: '中央補助案' },
                 { id: 'schools', icon: Search, label: '學校總表' },
                 { id: 'schedule', icon: Calendar, label: '115年度排程' },
-                { id: 'settings', icon: Database, label: '系統設定與備份' }, // 改名以強調設定功能
+                { id: 'settings', icon: Database, label: '系統設定與備份' }, 
             ].map(item => (
                 <button
                     key={item.id}
@@ -948,8 +955,8 @@ export default function App() {
         <div className="p-4 bg-gray-800 text-xs text-gray-400 text-center select-none flex flex-col items-center"><span>科技城市 ‧ 魅力桃園</span><span className="mt-2 text-[10px] text-gray-500 flex items-center"><Clock className="w-3 h-3 mr-1"/> {currentDate}</span></div>
       </aside>
 
-      <main className="flex-1 flex flex-col h-full overflow-hidden relative">
-        <header className="bg-white h-16 shadow-sm flex items-center justify-between px-6 z-10 flex-shrink-0">
+      <main className="flex-1 flex flex-col h-full overflow-hidden relative print-main-reset">
+        <header className="bg-white h-16 shadow-sm flex items-center justify-between px-6 z-10 flex-shrink-0 print-hide">
             <div className="flex items-center">
                 <h2 className="text-xl font-bold text-gray-700 flex items-center">
                     {activeTab === 'dashboard' && '首頁 / 戰情儀錶板'}
@@ -962,11 +969,26 @@ export default function App() {
             </div>
             <div className="flex items-center space-x-4">
                 {isDirty && <span className="flex items-center text-sm text-yellow-600 font-bold animate-pulse"><AlertCircle className="w-4 h-4 mr-1"/> 有未儲存的變更</span>}
+                
+                {/* 獨立的 A4 畫面截圖/列印按鈕 */}
+                <button 
+                    onClick={() => window.print()}
+                    className="flex items-center bg-gray-800 text-white px-3 py-1.5 rounded-lg shadow hover:bg-gray-700 transition-colors text-sm font-bold"
+                    title="將當前畫面匯出為 A4 PDF"
+                >
+                    <Printer className="w-4 h-4 mr-2"/> 匯出 A4 畫面
+                </button>
+
                 <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold border border-blue-200 shadow-inner">工</div>
             </div>
         </header>
 
-        <div className="flex-1 overflow-auto p-6 scroll-smooth bg-gray-50/50">
+        <div className="flex-1 overflow-auto p-6 scroll-smooth bg-gray-50/50 print-content-reset">
+            {/* 加入列印時隱藏的提示標語 */}
+            <div className="hidden print-block text-center text-xs text-gray-500 mb-4 pb-2 border-b">
+                本報表由桃園市通學廊道戰情儀錶板系統自動產生 | 產出日期：{currentDate}
+            </div>
+
             {activeTab === 'dashboard' && renderDashboard()}
             {activeTab === 'central' && renderCentral()}
             {activeTab === 'schools' && renderSchools()}
@@ -976,7 +998,7 @@ export default function App() {
       </main>
 
       {/* --- AI 戰情特助 (Floating Widget) --- */}
-      <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end">
+      <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end print-hide">
         {isAIOpen && (
             <div className="w-80 h-96 bg-white rounded-xl shadow-2xl border border-pink-100 mb-4 flex flex-col overflow-hidden animate-fade-in">
                 <div className="bg-gradient-to-r from-pink-500 to-purple-600 p-3 text-white flex justify-between items-center shadow-md">
@@ -1038,6 +1060,46 @@ export default function App() {
         ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
         ::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: #a8a8a8; }
+
+        /* --- A4 PDF 視覺報表列印專用 CSS --- */
+        @media print {
+            @page { 
+                size: A4 portrait; /* 直式 A4 */
+                margin: 2cm;       /* 上下左右 2cm 邊界 */
+            }
+            body { 
+                background: white !important; 
+                -webkit-print-color-adjust: exact !important; 
+                print-color-adjust: exact !important; 
+            }
+            /* 隱藏不需要列印的側邊欄、頂部導航與浮動視窗 */
+            .print-hide { display: none !important; }
+            /* 顯示列印專用標題 */
+            .print-block { display: block !important; }
+            
+            /* 重置主畫面的排版，確保內容不會被切斷 */
+            .print-main-reset { width: 100% !important; margin: 0 !important; padding: 0 !important; overflow: visible !important; height: auto !important; }
+            .print-content-reset { padding: 0 !important; background: white !important; overflow: visible !important; height: auto !important; }
+            .print-layout { padding-bottom: 0 !important; }
+            
+            /* 強制卡片保留底色 */
+            .print-bg-force { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+            .print-bg-gray { background-color: #1f2937 !important; color: white !important; }
+            .print-bg-green { background-color: #16a34a !important; color: white !important; }
+            .print-bg-blue { background-color: #2563eb !important; color: white !important; }
+            .print-bg-yellow { background-color: #eab308 !important; color: white !important; }
+            .print-bg-gray500 { background-color: #6b7280 !important; color: white !important; }
+            
+            /* 防止卡片被切成兩半 */
+            .print-avoid-break { page-break-inside: avoid !important; break-inside: avoid !important; }
+            /* 在圖表與表格之間強制換頁 (若有需要) */
+            .print-page-break { page-break-before: auto !important; break-before: auto !important; margin-top: 20px; }
+            
+            /* 表格列印優化 */
+            .print-table-wrapper { overflow: visible !important; border: none !important; box-shadow: none !important; }
+            .print-table { border-collapse: collapse !important; width: 100% !important; }
+            .print-table th, .print-table td { border: 1px solid #ddd !important; padding: 8px !important; }
+        }
       `}} />
     </div>
   );
