@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-// 修正：移除了未使用的 Edit 與 Filter 圖示，避免 Vercel 報錯
 import { LayoutDashboard, Building2, Calendar, Database, Download, Upload, Save, MapPin, Image as ImageIcon, Search, AlertCircle, CheckSquare, Square, Check, MessageCircle, X, Send, FileText, Clock, History, Key, Printer, Settings, Plus, Paperclip, FileOutput } from 'lucide-react';
 
 // --- 桃園市品牌色系 ---
@@ -34,13 +33,13 @@ const PROJECT_SOURCES = [
 
 // --- 系統更新日誌資料 ---
 const CHANGELOG = [
-  { date: '2026-03-16', version: 'v2.4.2', notes: ['深度重構：移除所有未使用的圖示與函數 (如 Edit, Filter, handleFeatureToggle)，符合 Vercel 最嚴格之 ESLint 規範'] },
+  { date: '2026-03-16', version: 'v2.4.3', notes: ['深度除錯：徹底移除未使用的 handleFeatureToggle 函數，解決 Vercel CI 環境中 ESLint 警告視為錯誤 (exited with 1) 的編譯阻擋'] },
+  { date: '2026-03-16', version: 'v2.4.2', notes: ['深度重構：移除所有未使用的圖示與函數，符合 Vercel 最嚴格之 ESLint 規範'] },
   { date: '2026-03-16', version: 'v2.4.1', notes: ['修復 Multi-Tag 標籤輸入框選擇下拉選單無法成功新增的 Bug', '優化標籤離焦自動儲存與點擊範圍'] },
   { date: '2026-03-16', version: 'v2.4.0', notes: ['案件來源升級為 Multi-Tag (多重標籤) 系統，支援陣列儲存與標籤視覺化'] },
   { date: '2026-03-16', version: 'v2.3.0', notes: ['新增「案件來源」組合式輸入框 (支援自由填寫與預設議員清單)', '排程看板：新增「已排入數量」統計指標卡片'] },
   { date: '2026-03-16', version: 'v2.2.0', notes: ['排程邏輯重構：改為預計完工導向，口袋名單直接嵌入各月份下拉選單，移除多餘側邊欄'] },
   { date: '2026-03-16', version: 'v2.1.0', notes: ['UI重構：115年度排程看板改為上下雙列 (上列1-6月、下列7-12月) 網格佈局'] },
-  { date: '2026-03-13', version: 'v2.0.2', notes: ['核心重構：徹底消除巢狀元件與底線命名，全面改為 Render 函數，修復 Vercel 編譯中斷錯誤'] },
   { date: '2026-03-13', version: 'v2.0.0', notes: ['AI特助升級：支援 TXT 參考資料上傳 (RAG架構) 與一鍵產生新聞稿', '學校總表：新增案件功能實作'] },
 ];
 
@@ -938,6 +937,7 @@ ${aiContextText || '目前無上傳參考資料。'}
                                     ))}
                                     {mProjects.length === 0 && <div className="text-xs text-center text-gray-400 mt-4">尚無排定案件</div>}
                                 </div>
+                                {/* 植入下拉清單 (拉取式操作) */}
                                 <div className="mt-2 border-t pt-2 print-hide">
                                     <select 
                                         className="w-full border border-teal-300 rounded bg-teal-50 p-1.5 text-teal-700 font-bold focus:ring-2 focus:ring-teal-500 outline-none shadow-sm cursor-pointer text-xs"
@@ -1017,6 +1017,7 @@ ${aiContextText || '目前無上傳參考資料。'}
                             <div><label className="block text-xs text-gray-500 mb-1">進場日期</label><input type="text" className="w-full border p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none" placeholder="YYYY/MM/DD" value={selectedProject.startDate} onChange={e => handleUpdateProject(selectedProject.id, 'startDate', e.target.value)} /></div>
                             <div><label className="block text-xs text-gray-500 mb-1">預計完工日</label><input type="text" className="w-full border p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none" placeholder="YYYY/MM/DD" value={selectedProject.endDate} onChange={e => handleUpdateProject(selectedProject.id, 'endDate', e.target.value)} /></div>
                             
+                            {/* 核心修正：案件來源欄位 (支援多重標籤 Tag Input) */}
                             <div className="col-span-2">
                                 <label className="block text-xs text-gray-500 mb-1 font-bold">案件來源 (可多選) <span className="text-pink-500 font-normal">可手動輸入並按 Enter，或從清單挑選</span></label>
                                 <MultiTagInput 
