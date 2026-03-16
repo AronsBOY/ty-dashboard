@@ -20,11 +20,12 @@ const STATUSES = ['已完工', '施工中', '規劃中', '暫緩'];
 
 // --- 系統更新日誌資料 ---
 const CHANGELOG = [
+  { date: '2026-03-16', version: 'v2.2.0', notes: ['排程邏輯重構：改為預計完工導向，口袋名單直接嵌入各月份下拉選單，移除多餘側邊欄'] },
+  { date: '2026-03-16', version: 'v2.1.0', notes: ['UI重構：115年度排程看板改為上下雙列 (上列1-6月、下列7-12月) 網格佈局'] },
   { date: '2026-03-13', version: 'v2.0.2', notes: ['核心重構：徹底消除巢狀元件與底線命名，全面改為 Render 函數，修復 Vercel 編譯中斷錯誤'] },
-  { date: '2026-03-13', version: 'v2.0.0', notes: ['AI特助升級：支援 TXT 參考資料上傳 (RAG架構) 與一鍵產生新聞稿', '學校總表：新增案件功能實作', '排程看板：大幅擴充口袋名單視窗寬度與視覺體驗'] },
+  { date: '2026-03-13', version: 'v2.0.0', notes: ['AI特助升級：支援 TXT 參考資料上傳 (RAG架構) 與一鍵產生新聞稿', '學校總表：新增案件功能實作'] },
   { date: '2026-03-13', version: 'v1.9.0', notes: ['學校總表支援自訂欄位寬度拖曳', '學校總表開啟全域垂直/水平卷軸', '學校總表新增進場與完工日期'] },
-  { date: '2026-03-13', version: 'v1.8.0', notes: ['優化 AI 提示詞架構，餵入各行政區詳細統計', '新增 115年度排程達標率看板', '拆分 A4 列印模組 [1] 與 [1-1]'] },
-  { date: '2026-03-13', version: 'v1.7.1', notes: ['修復 Gemini API 權限錯誤，全面升級至最新 gemini-2.5-flash 模型'] },
+  { date: '2026-03-13', version: 'v1.8.0', notes: ['優化 AI 提示詞架構，餵入各行政區詳細統計', '拆分 A4 列印模組 [1] 與 [1-1]'] },
   { date: '2026-03-13', version: 'v1.7.0', notes: ['新增 A4 自訂排版列印模組：支援 8 大區塊自由勾選組合匯出'] },
 ];
 
@@ -468,7 +469,7 @@ export default function App() {
   };
 
   const exportCSV = () => {
-    const headers = ['ID', '行政區', '案名', '層級', '狀態', '預算來源(大項)', '預算來源(細項)', '經費(萬)', '開工日', '完工日', '執行機關', '排程月份', '排除歸戶', '不核定'];
+    const headers = ['ID', '行政區', '案名', '層級', '狀態', '預算來源(大項)', '預算來源(細項)', '經費(萬)', '開工日', '完工日', '執行機關', '預計完工月份', '排除歸戶', '不核定'];
     const rows = projects.map(p => [ p.id, p.district, p.name, p.level, p.status, p.budgetSource1, p.budgetSource2, p.budgetAmount, p.startDate, p.endDate, p.agency, p.scheduleMonth, p.isExcluded ? 'Y' : 'N', p.isNotApproved ? 'Y' : 'N' ]);
     const csvContent = "data:text/csv;charset=utf-8,\uFEFF" + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
     const link = document.createElement("a"); link.setAttribute("href", encodeURI(csvContent)); link.setAttribute("download", "桃園通學廊道資料庫_匯出.csv");
@@ -515,7 +516,7 @@ export default function App() {
     content += `<h2>三、學校總表 (實際納入計算清單)</h2><table><tr><th width="10%">項次</th><th width="15%">行政區</th><th width="35%">案名</th><th width="15%">狀態</th><th width="15%">經費(萬)</th></tr>
         ${validSchools.map(p => `<tr><td class="text-center">${p.itemNumber}</td><td class="text-center">${p.district}</td><td>${p.name}</td><td class="text-center">${p.status}</td><td class="text-right">${Number(p.budgetAmount).toLocaleString()}</td></tr>`).join('')}</table>`;
     const scheduledProjects = projects.filter(p => p.scheduleMonth);
-    content += `<h2>四、115年度施工排程</h2><table><tr><th width="15%">月份</th><th>預計進場案件</th></tr>
+    content += `<h2>四、115年度施工排程預計完工清單</h2><table><tr><th width="15%">完工月份</th><th>預計完工案件</th></tr>
         ${scheduleMonths.map(m => {
           const mProjs = scheduledProjects.filter(p => p.scheduleMonth === String(m));
           return `<tr><td class="text-center" style="font-weight:bold;">${m} 月</td><td>${mProjs.length > 0 ? mProjs.map(p => `[${p.district}] ${p.name}`).join('、 ') : '尚無排程'}</td></tr>`;
@@ -763,7 +764,7 @@ ${aiContextText || '目前無上傳參考資料。'}
                         <ResizableTh minW="180px">案名(學校)</ResizableTh>
                         <ResizableTh minW="90px" className="text-center">狀態</ResizableTh>
                         <ResizableTh minW="120px" className="text-center text-blue-600">進場日期</ResizableTh>
-                        <ResizableTh minW="120px" className="text-center text-green-600">完工日期</ResizableTh>
+                        <ResizableTh minW="120px" className="text-center text-green-600">預計完工日</ResizableTh>
                         <ResizableTh minW="100px" className="text-center">預算大項</ResizableTh>
                         <ResizableTh minW="120px" className="text-center">細項</ResizableTh>
                         <ResizableTh minW="100px" className="text-right">經費(萬)</ResizableTh>
@@ -805,7 +806,7 @@ ${aiContextText || '目前無上傳參考資料。'}
 
      return (
         <div className="mb-6 print-avoid-break">
-            <h2 className="text-lg font-bold mb-3 border-l-4 pl-2" style={{ borderColor: COLORS.ecoGreen }}>[8] 115年度施工排程看板</h2>
+            <h2 className="text-lg font-bold mb-3 border-l-4 pl-2" style={{ borderColor: COLORS.ecoGreen }}>[8] 115年度預計完工看板 (排程進度)</h2>
             
             <div className="flex space-x-4 mb-4">
                 <div className="flex-1 bg-white border border-gray-200 rounded-lg p-4 shadow-sm print-border">
@@ -819,27 +820,49 @@ ${aiContextText || '目前無上傳參考資料。'}
                     </div>
                 </div>
                 <div className="flex-1 bg-white border border-gray-200 rounded-lg p-4 shadow-sm print-border">
-                    <div className="text-sm text-gray-500 font-bold mb-1">排程口袋名單 (待指派月份)</div>
+                    <div className="text-sm text-gray-500 font-bold mb-1">未排程數量 (待指定完工月份)</div>
                     <div className="flex items-end justify-between">
                         <div className="text-3xl font-black text-teal-600">{unscheduledProjects.length} <span className="text-lg text-gray-400 font-normal">案</span></div>
                     </div>
-                    <p className="text-xs text-gray-400 mt-2">系統將自動扣除已完工、暫緩或已排程之案件</p>
+                    <p className="text-xs text-gray-400 mt-2">系統自動扣除已完工、暫緩或已排定月份之案件</p>
                 </div>
             </div>
 
-            <div className="flex overflow-x-auto p-4 space-x-4 border rounded bg-gray-50 print-table-wrapper print-flex-wrap">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4 p-4 border rounded bg-gray-50 print-grid-cols-6">
                 {months.map(month => {
                     const mProjects = scheduledProjects.filter(p => p.scheduleMonth === String(month));
                     return (
-                        <div key={month} className="w-64 flex-shrink-0 bg-white border rounded-lg shadow-sm flex flex-col mb-4 print-w-1/4 print-m-2 print-avoid-break">
-                            <div className="bg-teal-500 p-2 rounded-t-lg text-white font-bold text-center print-bg-teal-500 print-text-white">115年 {month}月</div>
-                            <div className="p-2 flex-1 space-y-2 min-h-[150px] bg-white">
-                                {mProjects.map(p => (
-                                    <div key={p.id} className="p-2 border border-teal-100 rounded text-sm relative shadow-sm">
-                                        <div className="font-bold text-teal-800">{p.name}</div><div className="text-xs text-gray-500">{p.district}</div>
-                                    </div>
-                                ))}
-                                {mProjects.length === 0 && <div className="text-xs text-center text-gray-400 mt-4">尚無排程</div>}
+                        <div key={month} className="bg-white border rounded-lg shadow-sm flex flex-col print-avoid-break">
+                            <div className="bg-teal-500 p-2 rounded-t-lg text-white font-bold text-center print-bg-teal-500 print-text-white">115年 {month}月完工</div>
+                            <div className="p-2 flex-1 space-y-2 min-h-[120px] bg-white flex flex-col">
+                                <div className="flex-1 space-y-2">
+                                    {mProjects.map(p => (
+                                        <div key={p.id} className="p-2 border border-teal-100 rounded text-sm relative shadow-sm group">
+                                            <div className="font-bold text-teal-800">{p.name}</div><div className="text-xs text-gray-500">{p.district}</div>
+                                            <button className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition print-hide" onClick={() => handleUpdateProject(p.id, 'scheduleMonth', '')} title="移出排程">✕</button>
+                                        </div>
+                                    ))}
+                                    {mProjects.length === 0 && <div className="text-xs text-center text-gray-400 mt-4">尚無排定案件</div>}
+                                </div>
+                                {/* 植入下拉清單 (拉取式操作) */}
+                                <div className="mt-2 border-t pt-2 print-hide">
+                                    <select 
+                                        className="w-full border border-teal-300 rounded bg-teal-50 p-1.5 text-teal-700 font-bold focus:ring-2 focus:ring-teal-500 outline-none shadow-sm cursor-pointer text-xs"
+                                        value=""
+                                        onChange={(e) => {
+                                            if (e.target.value) {
+                                                handleUpdateProject(e.target.value, 'scheduleMonth', String(month));
+                                            }
+                                        }}
+                                    >
+                                        <option value="" disabled>+ 排入完工案件...</option>
+                                        {unscheduledProjects.map(up => (
+                                            <option key={up.id} value={up.id}>
+                                                {up.district} - {up.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
                             </div>
                         </div>
                     )
@@ -899,7 +922,7 @@ ${aiContextText || '目前無上傳參考資料。'}
                              <div><label className="block text-xs text-gray-500 mb-1">執行狀態</label><select className="w-full border p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none font-bold text-blue-700" value={selectedProject.status} onChange={e => handleUpdateProject(selectedProject.id, 'status', e.target.value)}>{STATUSES.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
                             <div><label className="block text-xs text-gray-500 mb-1">機關</label><input type="text" className="w-full border p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none" value={selectedProject.agency} onChange={e => handleUpdateProject(selectedProject.id, 'agency', e.target.value)} /></div>
                             <div><label className="block text-xs text-gray-500 mb-1">進場日期</label><input type="text" className="w-full border p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none" placeholder="YYYY/MM/DD" value={selectedProject.startDate} onChange={e => handleUpdateProject(selectedProject.id, 'startDate', e.target.value)} /></div>
-                            <div><label className="block text-xs text-gray-500 mb-1">完工日期</label><input type="text" className="w-full border p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none" placeholder="YYYY/MM/DD" value={selectedProject.endDate} onChange={e => handleUpdateProject(selectedProject.id, 'endDate', e.target.value)} /></div>
+                            <div><label className="block text-xs text-gray-500 mb-1">預計完工日</label><input type="text" className="w-full border p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none" placeholder="YYYY/MM/DD" value={selectedProject.endDate} onChange={e => handleUpdateProject(selectedProject.id, 'endDate', e.target.value)} /></div>
                         </div>
                         <div className="border-t pt-4 grid grid-cols-2 gap-4">
                             <div>
@@ -937,9 +960,9 @@ ${aiContextText || '目前無上傳參考資料。'}
                              <div><label className="block text-xs text-gray-500 mb-1 font-bold">層級</label><select className="w-full border border-gray-300 p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none" value={newProject.level} onChange={e => setNewProject({...newProject, level: e.target.value})}>{LEVELS.map(l => <option key={l} value={l}>{l}</option>)}</select></div>
                              <div><label className="block text-xs text-gray-500 mb-1 font-bold">執行狀態</label><select className="w-full border border-gray-300 p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none text-blue-700 font-bold" value={newProject.status} onChange={e => setNewProject({...newProject, status: e.target.value})}>{STATUSES.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
                             <div><label className="block text-xs text-gray-500 mb-1 font-bold">機關</label><input type="text" className="w-full border border-gray-300 p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none" value={newProject.agency} onChange={e => setNewProject({...newProject, agency: e.target.value})} /></div>
-                            <div><label className="block text-xs text-gray-500 mb-1 font-bold">排程月份</label><select className="w-full border border-gray-300 p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none text-teal-700" value={newProject.scheduleMonth} onChange={e => setNewProject({...newProject, scheduleMonth: e.target.value})}><option value="">暫不排程</option>{Array.from({length:12},(_,i)=>i+1).map(m=><option key={m} value={String(m)}>{m}月</option>)}</select></div>
+                            <div><label className="block text-xs text-gray-500 mb-1 font-bold">預計完工月份</label><select className="w-full border border-gray-300 p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none text-teal-700" value={newProject.scheduleMonth} onChange={e => setNewProject({...newProject, scheduleMonth: e.target.value})}><option value="">暫不排程</option>{Array.from({length:12},(_,i)=>i+1).map(m=><option key={m} value={String(m)}>{m}月</option>)}</select></div>
                             <div><label className="block text-xs text-gray-500 mb-1 font-bold">進場日期</label><input type="text" className="w-full border border-gray-300 p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none font-mono" placeholder="YYYY/MM/DD" value={newProject.startDate} onChange={e => setNewProject({...newProject, startDate: e.target.value})} /></div>
-                            <div><label className="block text-xs text-gray-500 mb-1 font-bold">完工日期</label><input type="text" className="w-full border border-gray-300 p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none font-mono" placeholder="YYYY/MM/DD" value={newProject.endDate} onChange={e => setNewProject({...newProject, endDate: e.target.value})} /></div>
+                            <div><label className="block text-xs text-gray-500 mb-1 font-bold">預計完工日</label><input type="text" className="w-full border border-gray-300 p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none font-mono" placeholder="YYYY/MM/DD" value={newProject.endDate} onChange={e => setNewProject({...newProject, endDate: e.target.value})} /></div>
                         </div>
                         <div className="border-t border-gray-200 pt-4 grid grid-cols-2 gap-4">
                             <div>
@@ -968,36 +991,9 @@ ${aiContextText || '目前無上傳參考資料。'}
   );
 
   const renderSchedule = () => {
-     const months = Array.from({length: 12}, (_, i) => i + 1);
-     const unscheduledProjects = projects.filter(p => !p.scheduleMonth && p.status !== '已完工' && p.status !== '暫緩' && !p.isExcluded);
-
      return (
-        <div className="bg-white p-6 rounded-xl shadow-sm h-full flex flex-col animate-fade-in">
+        <div className="bg-white p-6 rounded-xl shadow-sm h-full flex flex-col animate-fade-in pb-20 overflow-y-auto">
             {renderBlock8Schedule()}
-            <div className="flex-1 overflow-hidden border rounded bg-gray-50 flex mt-4">
-                <div className="w-1/3 min-w-[350px] max-w-[450px] bg-white border-r p-4 flex flex-col shadow-inner">
-                    <h3 className="font-bold text-gray-600 mb-3 border-b pb-2 flex items-center justify-between flex-shrink-0">
-                        <span>待排程清單</span>
-                        <span className="bg-teal-100 text-teal-800 text-xs px-2 py-1 rounded-full font-mono">{unscheduledProjects.length} 案</span>
-                    </h3>
-                    <div className="space-y-2 overflow-y-auto flex-1 pr-2 custom-scrollbar">
-                        {unscheduledProjects.map(p => (
-                            <div key={p.id} className="p-3 border rounded-lg bg-gray-50 text-sm hover:shadow-md transition border-l-4 border-l-teal-400">
-                                <div className="font-bold text-gray-800 text-base">{p.name} <span className="text-xs text-gray-500 font-normal bg-gray-200 px-1.5 py-0.5 rounded ml-1">{p.status}</span></div>
-                                <div className="text-sm text-gray-500 flex justify-between mt-3 items-center">
-                                    <span className="flex items-center"><MapPin className="w-3 h-3 mr-1"/> {p.district}</span>
-                                    <select className="border border-teal-300 rounded bg-white p-1.5 text-teal-700 font-bold focus:ring-2 focus:ring-teal-500 outline-none shadow-sm cursor-pointer" value="" onChange={(e) => handleUpdateProject(p.id, 'scheduleMonth', e.target.value)}><option value="">指派進場月份 ▾</option>{months.map(m => <option key={m} value={m}>{m}月排程</option>)}</select>
-                                </div>
-                            </div>
-                        ))}
-                        {unscheduledProjects.length === 0 && <div className="text-center text-gray-400 py-10">所有案件皆已排程完畢</div>}
-                    </div>
-                </div>
-                <div className="flex-1 bg-gray-100/50 flex flex-col items-center justify-center text-gray-400 text-sm">
-                    <Calendar className="w-16 h-16 text-gray-300 mb-4" />
-                    請在左側清單為案件指派月份，資料將自動更新至上方看板。
-                </div>
-            </div>
         </div>
      );
   }
@@ -1167,7 +1163,7 @@ ${aiContextText || '目前無上傳參考資料。'}
                      </div>
                      <div>
                          <h4 className="font-bold text-green-700 mb-2 border-b border-green-100 pb-1">【115年排程】</h4>
-                         <label className="flex items-center space-x-2 py-1 cursor-pointer hover:bg-gray-50 rounded px-2"><input type="checkbox" className="w-4 h-4 text-green-600 rounded border-gray-300 focus:ring-green-500" checked={printSelection.b8} onChange={e=>setPrintSelection({...printSelection, b8: e.target.checked})} /><span>[8] 115年度施工排程看板與月份圖表</span></label>
+                         <label className="flex items-center space-x-2 py-1 cursor-pointer hover:bg-gray-50 rounded px-2"><input type="checkbox" className="w-4 h-4 text-green-600 rounded border-gray-300 focus:ring-green-500" checked={printSelection.b8} onChange={e=>setPrintSelection({...printSelection, b8: e.target.checked})} /><span>[8] 115年度預計完工月份看板與名單</span></label>
                      </div>
                  </div>
 
