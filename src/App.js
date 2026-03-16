@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { LayoutDashboard, Building2, Calendar, Database, Download, Upload, Save, MapPin, Image as ImageIcon, Search, AlertCircle, Edit, CheckSquare, Square, Check, MessageCircle, X, Send, Filter, FileText, Clock, History, Key, Printer, Settings, Plus, Paperclip, FileOutput } from 'lucide-react';
+// 修正：移除了未使用的 Edit 與 Filter 圖示，避免 Vercel 報錯
+import { LayoutDashboard, Building2, Calendar, Database, Download, Upload, Save, MapPin, Image as ImageIcon, Search, AlertCircle, CheckSquare, Square, Check, MessageCircle, X, Send, FileText, Clock, History, Key, Printer, Settings, Plus, Paperclip, FileOutput } from 'lucide-react';
 
 // --- 桃園市品牌色系 ---
 const COLORS = {
@@ -33,11 +34,13 @@ const PROJECT_SOURCES = [
 
 // --- 系統更新日誌資料 ---
 const CHANGELOG = [
+  { date: '2026-03-16', version: 'v2.4.2', notes: ['深度重構：移除所有未使用的圖示與函數 (如 Edit, Filter, handleFeatureToggle)，符合 Vercel 最嚴格之 ESLint 規範'] },
   { date: '2026-03-16', version: 'v2.4.1', notes: ['修復 Multi-Tag 標籤輸入框選擇下拉選單無法成功新增的 Bug', '優化標籤離焦自動儲存與點擊範圍'] },
-  { date: '2026-03-16', version: 'v2.4.0', notes: ['案件來源升級為 Multi-Tag (多重標籤) 系統，支援陣列儲存與標籤視覺化', '優化 CSV 匯入匯出格式以相容多重標籤'] },
+  { date: '2026-03-16', version: 'v2.4.0', notes: ['案件來源升級為 Multi-Tag (多重標籤) 系統，支援陣列儲存與標籤視覺化'] },
   { date: '2026-03-16', version: 'v2.3.0', notes: ['新增「案件來源」組合式輸入框 (支援自由填寫與預設議員清單)', '排程看板：新增「已排入數量」統計指標卡片'] },
   { date: '2026-03-16', version: 'v2.2.0', notes: ['排程邏輯重構：改為預計完工導向，口袋名單直接嵌入各月份下拉選單，移除多餘側邊欄'] },
   { date: '2026-03-16', version: 'v2.1.0', notes: ['UI重構：115年度排程看板改為上下雙列 (上列1-6月、下列7-12月) 網格佈局'] },
+  { date: '2026-03-13', version: 'v2.0.2', notes: ['核心重構：徹底消除巢狀元件與底線命名，全面改為 Render 函數，修復 Vercel 編譯中斷錯誤'] },
   { date: '2026-03-13', version: 'v2.0.0', notes: ['AI特助升級：支援 TXT 參考資料上傳 (RAG架構) 與一鍵產生新聞稿', '學校總表：新增案件功能實作'] },
 ];
 
@@ -901,6 +904,7 @@ ${aiContextText || '目前無上傳參考資料。'}
                         <div className="bg-green-500 h-2 rounded-full print-bg-green-500" style={{ width: `${progressPercent}%` }}></div>
                     </div>
                 </div>
+                {/* 新增：已排入數量 */}
                 <div className="flex-1 bg-white border border-blue-200 rounded-lg p-4 shadow-sm print-border relative overflow-hidden">
                     <div className="absolute top-0 left-0 w-full h-1 bg-blue-500"></div>
                     <div className="text-sm text-blue-600 font-bold mb-1">已排入數量 (今年度預期完工)</div>
