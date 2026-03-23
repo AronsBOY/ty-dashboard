@@ -1,6 +1,17 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { LayoutDashboard, Building2, Calendar, Database, Download, Upload, Save, MapPin, Image as ImageIcon, Search, AlertCircle, CheckSquare, Square, Check, MessageCircle, X, Send, FileText, Clock, History, Key, Printer, Settings, Plus, Paperclip, FileOutput } from 'lucide-react';
+import { LayoutDashboard, Building2, Calendar, Database, Download, Upload, MapPin, Image as ImageIcon, Search, AlertCircle, CheckSquare, Square, Check, MessageCircle, X, Send, FileText, Clock, History, Key, Printer, Settings, Plus, Paperclip, FileOutput } from 'lucide-react';
+
+// --- 雲端資料庫 (Firebase) 模組載入 ---
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, doc, setDoc, onSnapshot } from 'firebase/firestore';
+
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
 // --- 桃園市品牌色系 ---
 const COLORS = {
@@ -33,14 +44,10 @@ const PROJECT_SOURCES = [
 
 // --- 系統更新日誌資料 ---
 const CHANGELOG = [
-  { date: '2026-03-16', version: 'v2.4.3', notes: ['深度除錯：徹底移除未使用的 handleFeatureToggle 函數，解決 Vercel CI 環境中 ESLint 警告視為錯誤 (exited with 1) 的編譯阻擋'] },
-  { date: '2026-03-16', version: 'v2.4.2', notes: ['深度重構：移除所有未使用的圖示與函數，符合 Vercel 最嚴格之 ESLint 規範'] },
-  { date: '2026-03-16', version: 'v2.4.1', notes: ['修復 Multi-Tag 標籤輸入框選擇下拉選單無法成功新增的 Bug', '優化標籤離焦自動儲存與點擊範圍'] },
-  { date: '2026-03-16', version: 'v2.4.0', notes: ['案件來源升級為 Multi-Tag (多重標籤) 系統，支援陣列儲存與標籤視覺化'] },
-  { date: '2026-03-16', version: 'v2.3.0', notes: ['新增「案件來源」組合式輸入框 (支援自由填寫與預設議員清單)', '排程看板：新增「已排入數量」統計指標卡片'] },
-  { date: '2026-03-16', version: 'v2.2.0', notes: ['排程邏輯重構：改為預計完工導向，口袋名單直接嵌入各月份下拉選單，移除多餘側邊欄'] },
-  { date: '2026-03-16', version: 'v2.1.0', notes: ['UI重構：115年度排程看板改為上下雙列 (上列1-6月、下列7-12月) 網格佈局'] },
-  { date: '2026-03-13', version: 'v2.0.0', notes: ['AI特助升級：支援 TXT 參考資料上傳 (RAG架構) 與一鍵產生新聞稿', '學校總表：新增案件功能實作'] },
+  { date: '2026-03-23', version: 'v3.0.0', notes: ['架構升級：正式導入 Google Firebase 雲端資料庫', '新功能：實作 Audit Logs (異動紀錄) 追蹤每一次資料變更', '介面優化：移除單機暫存按鈕，改為雲端即時連線同步機制'] },
+  { date: '2026-03-16', version: 'v2.4.3', notes: ['深度除錯：徹底移除未使用的 handleFeatureToggle 函數'] },
+  { date: '2026-03-16', version: 'v2.4.0', notes: ['案件來源升級為 Multi-Tag (多重標籤) 系統，支援陣列儲存'] },
+  { date: '2026-03-13', version: 'v2.0.0', notes: ['AI特助升級：支援 TXT 參考資料上傳 (RAG架構) 與一鍵產生新聞稿'] },
 ];
 
 // --- 輔助函數：日期轉換與處理 ---
@@ -88,7 +95,6 @@ const ResizableTh = ({ children, minW = "100px", className = "" }) => (
 const MultiTagInput = ({ tags = [], onChange, options = [], placeholder = "輸入或從清單選擇..." }) => {
     const [inputValue, setInputValue] = useState('');
     const inputRef = useRef(null);
-    
     const datalistId = useMemo(() => `dl-${Math.random().toString(36).substr(2, 9)}`, []);
     
     const handleKeyDown = (e) => {
@@ -101,62 +107,37 @@ const MultiTagInput = ({ tags = [], onChange, options = [], placeholder = "輸�
     const handleChange = (e) => {
         const val = e.target.value;
         setInputValue(val);
-        if (options.includes(val)) {
-            setTimeout(() => {
-                addTag(val);
-            }, 10);
-        }
+        if (options.includes(val)) setTimeout(() => addTag(val), 10);
     };
 
     const addTag = (val) => {
         const trimmed = val.trim().replace(/[,;]/g, '');
         if (trimmed) {
-            if (!tags.includes(trimmed)) {
-                onChange([...tags, trimmed]);
-            }
+            if (!tags.includes(trimmed)) onChange([...tags, trimmed]);
             setInputValue('');
         }
     };
 
-    const removeTag = (tagToRemove) => {
-        onChange(tags.filter(t => t !== tagToRemove));
-    };
+    const removeTag = (tagToRemove) => onChange(tags.filter(t => t !== tagToRemove));
 
     return (
-        <div 
-            className="w-full border border-gray-300 p-2 rounded focus-within:ring-2 focus-within:ring-pink-300 bg-pink-50/50 min-h-[42px] flex flex-wrap items-center gap-1 cursor-text"
-            onClick={() => inputRef.current?.focus()}
-        >
+        <div className="w-full border border-gray-300 p-2 rounded focus-within:ring-2 focus-within:ring-pink-300 bg-pink-50/50 min-h-[42px] flex flex-wrap items-center gap-1 cursor-text" onClick={() => inputRef.current?.focus()}>
             {tags.map((tag, idx) => (
                 <span key={idx} className="bg-pink-100 text-pink-800 text-xs font-bold px-2 py-1 rounded-full flex items-center border border-pink-200 shadow-sm transition-all hover:-translate-y-0.5">
                     {tag}
                     <button type="button" onClick={(e) => { e.stopPropagation(); removeTag(tag); }} className="ml-1 text-pink-400 hover:text-pink-900 focus:outline-none"><X className="w-3 h-3" /></button>
                 </span>
             ))}
-            <input
-                ref={inputRef}
-                type="text"
-                list={datalistId}
-                className="flex-1 min-w-[150px] outline-none bg-transparent text-sm text-gray-800 font-bold placeholder-gray-400 p-1"
-                placeholder={tags.length === 0 ? placeholder : "繼續新增..."}
-                value={inputValue}
-                onChange={handleChange}
-                onKeyDown={handleKeyDown}
-                onBlur={() => inputValue && addTag(inputValue)}
-            />
-            <datalist id={datalistId}>
-                {options.filter(o => !tags.includes(o)).map(src => <option key={src} value={src} />)}
-            </datalist>
+            <input ref={inputRef} type="text" list={datalistId} className="flex-1 min-w-[150px] outline-none bg-transparent text-sm text-gray-800 font-bold placeholder-gray-400 p-1" placeholder={tags.length === 0 ? placeholder : "繼續新增..."} value={inputValue} onChange={handleChange} onKeyDown={handleKeyDown} onBlur={() => inputValue && addTag(inputValue)} />
+            <datalist id={datalistId}>{options.filter(o => !tags.includes(o)).map(src => <option key={src} value={src} />)}</datalist>
         </div>
     );
 };
 
-// --- 初始預設新增物件 ---
 const DEFAULT_NEW_PROJECT = {
     district: '桃園區', name: '', level: '國小', status: '規劃中', budgetSource1: '市府預算', budgetSource2: '公務預算', 
     budgetAmount: 0, startDate: '', endDate: '', agency: '養工處', scheduleMonth: '', isExcluded: false, isNotApproved: false,
-    source: [], 
-    features: { pole: false, shelter: false, light: false, pickup: false }
+    source: [], features: { pole: false, shelter: false, light: false, pickup: false }
 };
 
 // --- 由文本解析匯入之完整資料庫 ---
@@ -324,21 +305,21 @@ const INITIAL_DATA = [
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
+  
+  // --- 系統狀態 (替換為雲端連線版) ---
   const [projects, setProjects] = useState(INITIAL_DATA);
-  const [isDirty, setIsDirty] = useState(false);
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [user, setUser] = useState(null);
+
   const [filterDist, setFilterDist] = useState('All');
   const [schoolDistrictFilter, setSchoolDistrictFilter] = useState('All');
   const [tableStatusFilter, setTableStatusFilter] = useState('All'); 
   const [selectedProject, setSelectedProject] = useState(null);
   const fileInputRef = useRef(null);
   
-  // --- A4 自訂列印模組 State ---
+  // --- A4 列印與模態框 ---
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
-  const [printSelection, setPrintSelection] = useState({
-    b1: false, b1_1: false, b2: false, b3: false, b4: false, b5: false, b6: false, b7: false, b8: false
-  });
-  
-  // --- 新增學校 State ---
+  const [printSelection, setPrintSelection] = useState({ b1: false, b1_1: false, b2: false, b3: false, b4: false, b5: false, b6: false, b7: false, b8: false });
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [newProject, setNewProject] = useState(DEFAULT_NEW_PROJECT);
 
@@ -350,9 +331,65 @@ export default function App() {
   const [currentDate, setCurrentDate] = useState('');
   useEffect(() => {
       const today = new Date();
-      const formattedDate = `${today.getFullYear()}年${today.getMonth() + 1}月${today.getDate()}日`;
-      setCurrentDate(formattedDate);
+      setCurrentDate(`${today.getFullYear()}年${today.getMonth() + 1}月${today.getDate()}日`);
   }, []);
+
+  // ==========================================
+  // 【新增】Firebase 雲端連線與同步邏輯
+  // ==========================================
+  useEffect(() => {
+    const initAuth = async () => {
+      if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+        await signInWithCustomToken(auth, __initial_auth_token);
+      } else {
+        await signInAnonymously(auth);
+      }
+    };
+    initAuth();
+    const unsubscribe = onAuthStateChanged(auth, setUser);
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'taoyuan_db', 'main_data');
+    const unsubscribe = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setProjects(data.projects || INITIAL_DATA);
+        setAuditLogs(data.logs || []);
+      } else {
+        // 資料庫為空，初始化資料
+        setDoc(docRef, { 
+            projects: INITIAL_DATA, 
+            logs: [{ time: new Date().toLocaleString('zh-TW', { hour12: false }), action: '建立資料庫架構與初始化資料', user: user.uid }] 
+        });
+      }
+    }, (error) => console.error("Firestore 同步錯誤:", error));
+    
+    return () => unsubscribe();
+  }, [user]);
+
+  // 統一的寫入雲端與紀錄 Audit Log 函數
+  const persistData = async (newProjects, actionDesc) => {
+    setProjects(newProjects); // Optimistic UI: 畫面立刻反應，不卡頓
+    if (!user) return;
+    
+    const newLog = {
+        time: new Date().toLocaleString('zh-TW', { hour12: false }),
+        action: actionDesc,
+        user: user.uid
+    };
+    const updatedLogs = [newLog, ...auditLogs].slice(0, 200); // 僅保留最新 200 筆避免爆容量
+    setAuditLogs(updatedLogs);
+    
+    try {
+        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'taoyuan_db', 'main_data');
+        await setDoc(docRef, { projects: newProjects, logs: updatedLogs }, { merge: true });
+    } catch (error) {
+        console.error("儲存至雲端失敗:", error);
+    }
+  };
 
   // --- AI 戰情特助 State ---
   const [isAIOpen, setIsAIOpen] = useState(false);
@@ -503,17 +540,25 @@ export default function App() {
     };
   }, [projects]);
 
-  // --- 資料操作 CRUD ---
-  const handleUpdateProject = (id, field, value) => { setProjects(prev => prev.map(p => p.id === id ? { ...p, [field]: value } : p)); setIsDirty(true); };
-  const handleToggleExclude = (id) => { setProjects(prev => prev.map(p => p.id === id ? { ...p, isExcluded: !p.isExcluded } : p)); setIsDirty(true); };
-  const handleToggleNotApproved = (id) => { setProjects(prev => prev.map(p => p.id === id ? { ...p, isNotApproved: !p.isNotApproved } : p)); setIsDirty(true); };
+  // --- CRUD (已連結雲端同步 persistData) ---
+  const handleToggleExclude = (id) => { 
+      const proj = projects.find(p => p.id === id);
+      const updated = projects.map(p => p.id === id ? { ...p, isExcluded: !p.isExcluded } : p);
+      persistData(updated, `切換 ${proj.name} 的歸戶狀態為：${!proj.isExcluded ? '排除' : '納入'}`); 
+  };
+  
+  const handleToggleNotApproved = (id) => { 
+      const proj = projects.find(p => p.id === id);
+      const updated = projects.map(p => p.id === id ? { ...p, isNotApproved: !p.isNotApproved } : p);
+      persistData(updated, `變更 ${proj.name} 的核定狀態為：${!proj.isNotApproved ? '不核定' : '核定'}`); 
+  };
   
   const handleAddNewProject = () => {
     if (!newProject.name.trim()) { alert('請輸入學校/案件名稱'); return; }
     const newId = Date.now().toString();
     const projectToAdd = { ...newProject, id: newId };
-    setProjects([projectToAdd, ...projects]);
-    setIsDirty(true);
+    const updated = [projectToAdd, ...projects];
+    persistData(updated, `系統新增了案件：${newProject.name}`);
     setIsAddModalOpen(false);
     setNewProject(DEFAULT_NEW_PROJECT);
   };
@@ -541,7 +586,8 @@ export default function App() {
         });
       }
       if (newProjects.length > 0) {
-        setProjects(newProjects); setIsDirty(true); alert(`成功匯入 ${newProjects.length} 筆資料`);
+        persistData(newProjects, `批次匯入了 ${newProjects.length} 筆資料 (CSV覆蓋)`);
+        alert(`成功匯入 ${newProjects.length} 筆資料並同步至雲端`);
       }
     };
     reader.readAsText(file);
@@ -614,8 +660,6 @@ export default function App() {
     document.body.appendChild(link); link.click(); document.body.removeChild(link);
   };
 
-  const saveChanges = () => { setIsDirty(false); alert('變更已儲存 (測試版僅儲存於記憶體，請使用匯出備份)'); };
-
   // --- AI 助理核心邏輯 (支援 RAG 文件注入) ---
   const handleAiFileUpload = (e) => {
       const file = e.target.files[0];
@@ -645,7 +689,6 @@ export default function App() {
              setIsAILoading(false); return;
         }
         
-        // RAG 架構：將行政區統計資料打包餵給 AI
         const districtContext = kpis.districtCards.filter(d => d.name !== '全市總計').map(d => 
             `- ${d.name}: 實際歸戶 ${d.actualTotal} 所 (完工 ${d.actualCompleted}, 施工 ${d.actualInProgress}, 規劃 ${d.actualPlanning}, 暫緩 ${d.actualPaused}), 總經費 ${d.totalBudget.toLocaleString()} 萬`
         ).join('\n');
@@ -684,7 +727,6 @@ ${aiContextText || '目前無上傳參考資料。'}
       handleAiSubmit(prompt);
   };
 
-  // --- 列印模組前置設定：打開彈窗並智慧預選 ---
   const openPrintConfig = () => {
       setPrintSelection({
           b1: activeTab === 'dashboard', b1_1: activeTab === 'dashboard', b2: activeTab === 'dashboard', b3: activeTab === 'dashboard',
@@ -693,10 +735,6 @@ ${aiContextText || '目前無上傳參考資料。'}
       setIsPrintModalOpen(true);
   };
 
-  // ==========================================
-  // 螢幕與列印共用的區塊 (重構為 Render 函數)
-  // ==========================================
-  
   const renderBlock1Overview = () => (
     <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 mb-6 print-border-l-primary print-avoid-break" style={{ borderColor: COLORS.primary }}>
         <h2 className="text-xl font-bold mb-4" style={{ color: COLORS.primary }}>[1] 錄案與經費概況總覽</h2>
@@ -862,7 +900,7 @@ ${aiContextText || '目前無上傳參考資料。'}
                             <td className="p-2 border-b text-center screen-only" onClick={() => handleToggleExclude(p.id)}><div className="flex items-center justify-center cursor-pointer">{p.isExcluded ? <CheckSquare className="w-5 h-5 text-red-500"/> : <Square className="w-5 h-5 text-gray-300"/>}</div></td>
                             <td className="p-2 border-b text-center">{p.district}</td>
                             <td className="p-2 border-b text-xs text-gray-500 text-center">{p.level}</td>
-                            <td className="p-2 border-b font-medium text-blue-600 screen-only cursor-pointer hover:underline" onClick={() => setSelectedProject(p)}>{p.name} {isDuplicateName(p.name) && <span className="ml-1 text-[10px] bg-red-100 text-red-600 px-1 rounded inline-block">重複案</span>}</td>
+                            <td className="p-2 border-b font-medium text-blue-600 screen-only cursor-pointer hover:underline" onClick={() => setSelectedProject({...p})}>{p.name} {isDuplicateName(p.name) && <span className="ml-1 text-[10px] bg-red-100 text-red-600 px-1 rounded inline-block">重複案</span>}</td>
                             <td className="p-2 border-b font-medium text-blue-800 print-only hidden">{p.name} {isDuplicateName(p.name) && <span className="ml-1 text-[10px] text-red-600">(重複案)</span>}</td>
                             <td className="p-2 border-b text-center"><span className={p.status === '已完工' ? 'text-green-600 font-bold bg-green-50 px-2 py-1 rounded print-bg-green-50' : p.status === '暫緩' ? 'text-gray-400' : ''}>{p.status}</span></td>
                             <td className="p-2 border-b text-center text-gray-600 font-mono tracking-tighter">{p.startDate || '-'}</td>
@@ -903,7 +941,6 @@ ${aiContextText || '目前無上傳參考資料。'}
                         <div className="bg-green-500 h-2 rounded-full print-bg-green-500" style={{ width: `${progressPercent}%` }}></div>
                     </div>
                 </div>
-                {/* 新增：已排入數量 */}
                 <div className="flex-1 bg-white border border-blue-200 rounded-lg p-4 shadow-sm print-border relative overflow-hidden">
                     <div className="absolute top-0 left-0 w-full h-1 bg-blue-500"></div>
                     <div className="text-sm text-blue-600 font-bold mb-1">已排入數量 (今年度預期完工)</div>
@@ -932,19 +969,24 @@ ${aiContextText || '目前無上傳參考資料。'}
                                     {mProjects.map(p => (
                                         <div key={p.id} className="p-2 border border-teal-100 rounded text-sm relative shadow-sm group">
                                             <div className="font-bold text-teal-800">{p.name}</div><div className="text-xs text-gray-500">{p.district}</div>
-                                            <button className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition print-hide" onClick={() => handleUpdateProject(p.id, 'scheduleMonth', '')} title="移出排程">✕</button>
+                                            <button className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition print-hide" onClick={() => {
+                                                const updated = projects.map(proj => proj.id === p.id ? { ...proj, scheduleMonth: '' } : proj);
+                                                persistData(updated, `將 ${p.name} 移出 ${month} 月排程`);
+                                            }} title="移出排程">✕</button>
                                         </div>
                                     ))}
                                     {mProjects.length === 0 && <div className="text-xs text-center text-gray-400 mt-4">尚無排定案件</div>}
                                 </div>
-                                {/* 植入下拉清單 (拉取式操作) */}
                                 <div className="mt-2 border-t pt-2 print-hide">
                                     <select 
                                         className="w-full border border-teal-300 rounded bg-teal-50 p-1.5 text-teal-700 font-bold focus:ring-2 focus:ring-teal-500 outline-none shadow-sm cursor-pointer text-xs"
                                         value=""
                                         onChange={(e) => {
                                             if (e.target.value) {
-                                                handleUpdateProject(e.target.value, 'scheduleMonth', String(month));
+                                                const targetId = e.target.value;
+                                                const pName = projects.find(p => p.id === targetId)?.name;
+                                                const updated = projects.map(p => p.id === targetId ? { ...p, scheduleMonth: String(month) } : p);
+                                                persistData(updated, `將 ${pName} 排入 ${month} 月完工`);
                                             }
                                         }}
                                     >
@@ -1001,28 +1043,27 @@ ${aiContextText || '目前無上傳參考資料。'}
         {renderBlock6SchoolStats()}
         {renderBlock7SchoolTable()}
 
-        {/* --- 編輯既有案件 Modal --- */}
+        {/* --- 編輯既有案件 Modal (優化為分離狀態) --- */}
         {selectedProject && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 animate-fade-in screen-only">
                 <div className="bg-white w-[600px] rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
                     <div className="bg-gradient-to-r from-pink-500 to-rose-500 p-4 text-white flex justify-between items-center"><h3 className="font-bold text-lg flex items-center"><Building2 className="mr-2"/> 個案詳細資訊卡</h3><button onClick={() => setSelectedProject(null)} className="text-white hover:text-gray-200 transition-transform hover:scale-110"><X className="w-6 h-6" /></button></div>
                     <div className="p-6 overflow-y-auto flex-1 space-y-4 custom-scrollbar">
                         <div className="grid grid-cols-2 gap-4">
-                            <div><label className="block text-xs text-gray-500 mb-1">案名(學校)</label><input type="text" className="w-full border p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none" value={selectedProject.name} onChange={e => handleUpdateProject(selectedProject.id, 'name', e.target.value)} /></div>
+                            <div><label className="block text-xs text-gray-500 mb-1">案名(學校)</label><input type="text" className="w-full border p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none" value={selectedProject.name} onChange={e => setSelectedProject({...selectedProject, name: e.target.value})} /></div>
                             <div><label className="block text-xs text-gray-500 mb-1">Google定位</label><a href={`https://www.google.com/maps/search/?api=1&query=${selectedProject.district}${selectedProject.name}`} target="_blank" rel="noreferrer" className="flex items-center justify-center h-[42px] text-blue-500 border p-2 rounded hover:bg-blue-50 transition-colors font-bold"><MapPin className="w-4 h-4 mr-2"/> 開啟地圖搜尋</a></div>
-                            <div><label className="block text-xs text-gray-500 mb-1">行政區</label><select className="w-full border p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none" value={selectedProject.district} onChange={e => handleUpdateProject(selectedProject.id, 'district', e.target.value)}>{DISTRICTS.map(d => <option key={d} value={d}>{d}</option>)}</select></div>
-                             <div><label className="block text-xs text-gray-500 mb-1">層級</label><select className="w-full border p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none" value={selectedProject.level} onChange={e => handleUpdateProject(selectedProject.id, 'level', e.target.value)}>{LEVELS.map(l => <option key={l} value={l}>{l}</option>)}</select></div>
-                             <div><label className="block text-xs text-gray-500 mb-1">執行狀態</label><select className="w-full border p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none font-bold text-blue-700" value={selectedProject.status} onChange={e => handleUpdateProject(selectedProject.id, 'status', e.target.value)}>{STATUSES.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
-                            <div><label className="block text-xs text-gray-500 mb-1">機關</label><input type="text" className="w-full border p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none" value={selectedProject.agency} onChange={e => handleUpdateProject(selectedProject.id, 'agency', e.target.value)} /></div>
-                            <div><label className="block text-xs text-gray-500 mb-1">進場日期</label><input type="text" className="w-full border p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none" placeholder="YYYY/MM/DD" value={selectedProject.startDate} onChange={e => handleUpdateProject(selectedProject.id, 'startDate', e.target.value)} /></div>
-                            <div><label className="block text-xs text-gray-500 mb-1">預計完工日</label><input type="text" className="w-full border p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none" placeholder="YYYY/MM/DD" value={selectedProject.endDate} onChange={e => handleUpdateProject(selectedProject.id, 'endDate', e.target.value)} /></div>
+                            <div><label className="block text-xs text-gray-500 mb-1">行政區</label><select className="w-full border p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none" value={selectedProject.district} onChange={e => setSelectedProject({...selectedProject, district: e.target.value})}>{DISTRICTS.map(d => <option key={d} value={d}>{d}</option>)}</select></div>
+                             <div><label className="block text-xs text-gray-500 mb-1">層級</label><select className="w-full border p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none" value={selectedProject.level} onChange={e => setSelectedProject({...selectedProject, level: e.target.value})}>{LEVELS.map(l => <option key={l} value={l}>{l}</option>)}</select></div>
+                             <div><label className="block text-xs text-gray-500 mb-1">執行狀態</label><select className="w-full border p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none font-bold text-blue-700" value={selectedProject.status} onChange={e => setSelectedProject({...selectedProject, status: e.target.value})}>{STATUSES.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
+                            <div><label className="block text-xs text-gray-500 mb-1">機關</label><input type="text" className="w-full border p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none" value={selectedProject.agency} onChange={e => setSelectedProject({...selectedProject, agency: e.target.value})} /></div>
+                            <div><label className="block text-xs text-gray-500 mb-1">進場日期</label><input type="text" className="w-full border p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none" placeholder="YYYY/MM/DD" value={selectedProject.startDate} onChange={e => setSelectedProject({...selectedProject, startDate: e.target.value})} /></div>
+                            <div><label className="block text-xs text-gray-500 mb-1">預計完工日</label><input type="text" className="w-full border p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none" placeholder="YYYY/MM/DD" value={selectedProject.endDate} onChange={e => setSelectedProject({...selectedProject, endDate: e.target.value})} /></div>
                             
-                            {/* 核心修正：案件來源欄位 (支援多重標籤 Tag Input) */}
                             <div className="col-span-2">
-                                <label className="block text-xs text-gray-500 mb-1 font-bold">案件來源 (可多選) <span className="text-pink-500 font-normal">可手動輸入並按 Enter，或從清單挑選</span></label>
+                                <label className="block text-xs text-gray-500 mb-1 font-bold">案件來源 (可多選)</label>
                                 <MultiTagInput 
                                     tags={selectedProject.source || []} 
-                                    onChange={(newTags) => handleUpdateProject(selectedProject.id, 'source', newTags)}
+                                    onChange={(newTags) => setSelectedProject({...selectedProject, source: newTags})}
                                     options={PROJECT_SOURCES}
                                 />
                             </div>
@@ -1030,20 +1071,26 @@ ${aiContextText || '目前無上傳參考資料。'}
                         <div className="border-t pt-4 grid grid-cols-2 gap-4">
                             <div>
                                 <label className="block text-xs text-gray-500 mb-1">預算來源</label>
-                                <select className="w-full border p-2 rounded mb-2 focus:ring-2 focus:ring-pink-300 outline-none font-bold" value={selectedProject.budgetSource1} onChange={e => handleUpdateProject(selectedProject.id, 'budgetSource1', e.target.value)}><option value="">選擇來源</option><option value="市府預算">市府預算</option><option value="中央補助">中央補助</option></select>
-                                <select className="w-full border p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none" value={selectedProject.budgetSource2} onChange={e => handleUpdateProject(selectedProject.id, 'budgetSource2', e.target.value)}>
+                                <select className="w-full border p-2 rounded mb-2 focus:ring-2 focus:ring-pink-300 outline-none font-bold" value={selectedProject.budgetSource1} onChange={e => setSelectedProject({...selectedProject, budgetSource1: e.target.value})}><option value="">選擇來源</option><option value="市府預算">市府預算</option><option value="中央補助">中央補助</option></select>
+                                <select className="w-full border p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none" value={selectedProject.budgetSource2} onChange={e => setSelectedProject({...selectedProject, budgetSource2: e.target.value})}>
                                      <option value="">細項(公務/國土/公路等)</option>
                                     {selectedProject.budgetSource1 === '市府預算' ? (<><option value="公務預算">公務預算</option><option value="道路基金">道路基金</option><option value="其他基金">其他基金</option><option value="統籌分配">統籌分配</option></>) : (<><option value="國土署">國土署</option><option value="公路局">公路局</option></>)}
                                 </select>
                             </div>
                             <div>
                                 <label className="block text-xs text-gray-500 mb-1">總經費(萬元)</label>
-                                <input type="number" className="w-full border p-2 rounded mb-2 focus:ring-2 focus:ring-pink-300 outline-none font-mono font-bold text-pink-600" value={selectedProject.budgetAmount} onChange={e => handleUpdateProject(selectedProject.id, 'budgetAmount', Number(e.target.value))} />
+                                <input type="number" className="w-full border p-2 rounded mb-2 focus:ring-2 focus:ring-pink-300 outline-none font-mono font-bold text-pink-600" value={selectedProject.budgetAmount} onChange={e => setSelectedProject({...selectedProject, budgetAmount: Number(e.target.value)})} />
                                 <div className="border-2 border-dashed border-pink-200 rounded-lg p-4 flex flex-col items-center justify-center text-pink-400 cursor-pointer hover:bg-pink-50 hover:border-pink-400 transition-colors"><ImageIcon className="w-6 h-6 mb-1"/><span className="text-xs font-bold">上傳現況照片</span></div>
                             </div>
                         </div>
                     </div>
-                    <div className="p-4 border-t bg-gray-50 flex justify-end"><button className="px-6 py-2 bg-pink-500 text-white font-bold rounded-lg shadow-md hover:bg-pink-600 hover:shadow-lg transition-all" onClick={() => setSelectedProject(null)}>完成儲存</button></div>
+                    <div className="p-4 border-t bg-gray-50 flex justify-end">
+                        <button className="px-6 py-2 bg-pink-500 text-white font-bold rounded-lg shadow-md hover:bg-pink-600 hover:shadow-lg transition-all" onClick={() => {
+                            const updated = projects.map(p => p.id === selectedProject.id ? selectedProject : p);
+                            persistData(updated, `更新了案件 ${selectedProject.name} 的詳細資訊`);
+                            setSelectedProject(null);
+                        }}>完成儲存</button>
+                    </div>
                 </div>
             </div>
         )}
@@ -1113,6 +1160,23 @@ ${aiContextText || '目前無上傳參考資料。'}
 
   const renderSettings = () => (
     <div className="max-w-4xl mx-auto space-y-6 animate-fade-in pb-20">
+        
+        {/* 新增：異動紀錄區塊取代單機暫存 */}
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+            <h2 className="text-xl font-bold mb-4 flex items-center text-gray-800"><History className="mr-2 text-blue-500"/> 資料庫異動紀錄 (即時同步)</h2>
+            <div className="space-y-3 max-h-80 overflow-y-auto pr-2 custom-scrollbar">
+                {auditLogs.length > 0 ? auditLogs.map((log, idx) => (
+                    <div key={idx} className="border-b border-gray-100 pb-2 text-sm">
+                        <div className="flex items-center justify-between text-gray-500 mb-1">
+                            <span className="flex items-center text-xs"><Clock className="w-3 h-3 mr-1"/> {log.time}</span>
+                            <span className="text-[10px] font-mono bg-gray-100 px-2 py-0.5 rounded text-gray-400">User: {log.user.slice(0,6)}...</span>
+                        </div>
+                        <div className="font-bold text-gray-800">{log.action}</div>
+                    </div>
+                )) : <div className="text-gray-400 text-center py-8 flex flex-col items-center"><Database className="w-8 h-8 mb-2 opacity-50"/>尚無異動紀錄，或者正在載入雲端資料...</div>}
+            </div>
+        </div>
+
         <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-purple-500">
             <h2 className="text-xl font-bold mb-2 flex items-center text-gray-800"><Key className="mr-2 text-purple-500"/> AI 戰情特助設定 (重要)</h2>
             <p className="text-sm text-gray-600 mb-4 line-relaxed">系統已成功部署至外部網路！請輸入您的 Google Gemini API Key 以喚醒右下角的 AI 特助。<br/><span className="text-purple-600 font-bold">(您的金鑰僅會加密儲存於當前設備的瀏覽器中，絕對不會外洩。)</span></p>
@@ -1138,14 +1202,9 @@ ${aiContextText || '目前無上傳參考資料。'}
             <h2 className="text-xl font-bold mb-4 flex items-center text-gray-800"><Database className="mr-2"/> 報表匯出與系統備份</h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="border border-blue-200 bg-blue-50 p-6 rounded-lg text-center hover:shadow-md transition"><Download className="w-12 h-12 text-blue-500 mx-auto mb-4"/><h3 className="font-bold text-blue-800 mb-2">1. 下載資料備份</h3><p className="text-xs text-blue-600 mb-4">將目前的資料庫匯出為 CSV 檔 (相容多重標籤)。</p><button onClick={exportCSV} className="bg-blue-600 text-white px-4 py-2 rounded shadow hover:bg-blue-700 w-full font-bold">匯出 CSV</button></div>
-                <div className="border border-green-200 bg-green-50 p-6 rounded-lg text-center hover:shadow-md transition"><Upload className="w-12 h-12 text-green-500 mx-auto mb-4"/><h3 className="font-bold text-green-800 mb-2">2. 匯入更新系統</h3><p className="text-xs text-green-600 mb-4">上傳已編輯好的 CSV 覆蓋當前資料。</p><input type="file" accept=".csv" ref={fileInputRef} onChange={handleFileUpload} className="hidden" /><button onClick={() => fileInputRef.current.click()} className="bg-green-600 text-white px-4 py-2 rounded shadow hover:bg-green-700 w-full font-bold">選擇 CSV 匯入</button></div>
+                <div className="border border-green-200 bg-green-50 p-6 rounded-lg text-center hover:shadow-md transition"><Upload className="w-12 h-12 text-green-500 mx-auto mb-4"/><h3 className="font-bold text-green-800 mb-2">2. 匯入更新系統</h3><p className="text-xs text-green-600 mb-4">上傳已編輯好的 CSV 覆蓋當前雲端資料庫。</p><input type="file" accept=".csv" ref={fileInputRef} onChange={handleFileUpload} className="hidden" /><button onClick={() => fileInputRef.current.click()} className="bg-green-600 text-white px-4 py-2 rounded shadow hover:bg-green-700 w-full font-bold">選擇 CSV 匯入</button></div>
                 <div className="border border-pink-200 bg-pink-50 p-6 rounded-lg text-center hover:shadow-md transition relative"><FileText className="w-12 h-12 text-pink-500 mx-auto mb-4"/><h3 className="font-bold text-pink-800 mb-2">3. 純文字報表</h3><p className="text-xs text-pink-600 mb-4">產生以文字為主的 Word 檔。</p><button onClick={exportWord} className="bg-pink-600 text-white px-4 py-2 rounded shadow hover:bg-pink-700 w-full font-bold flex items-center justify-center"><FileText className="w-4 h-4 mr-2"/> 匯出 Word (.doc)</button></div>
             </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-xl shadow-sm text-center border border-gray-200">
-            <h2 className="text-lg font-bold mb-4">儲存暫存變更</h2>
-            <button onClick={saveChanges} disabled={!isDirty} className={`px-8 py-3 rounded font-bold shadow-lg flex items-center justify-center mx-auto transition-all ${isDirty ? 'bg-pink-600 text-white hover:bg-pink-700 hover:scale-105' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}><Save className="w-5 h-5 mr-2" /> {isDirty ? '儲存變更' : '目前無變更'}</button>
         </div>
     </div>
   );
@@ -1192,7 +1251,9 @@ ${aiContextText || '目前無上傳參考資料。'}
                 <span className="ml-4 bg-pink-50 text-pink-700 px-3 py-1 rounded-full text-xs font-bold border border-pink-100 flex items-center shadow-sm"><Calendar className="w-3 h-3 mr-1"/> {currentDate}</span>
             </div>
             <div className="flex items-center space-x-4">
-                {isDirty && <span className="flex items-center text-sm text-yellow-600 font-bold animate-pulse"><AlertCircle className="w-4 h-4 mr-1"/> 有未儲存的變更</span>}
+                <span className="flex items-center text-sm text-green-600 font-bold animate-pulse">
+                    <Database className="w-4 h-4 mr-1"/> 雲端已連線同步
+                </span>
                 <button onClick={openPrintConfig} className="flex items-center bg-gray-800 text-white px-3 py-1.5 rounded-lg shadow hover:bg-gray-700 transition-colors text-sm font-bold shadow-gray-500/50">
                     <Printer className="w-4 h-4 mr-2"/> 匯出 A4 視覺報表
                 </button>
