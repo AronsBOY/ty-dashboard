@@ -83,6 +83,26 @@ const determineLevel = (name) => {
   return '國小';
 };
 
+// --- 行政區專屬意象主題 ---
+const getDistrictTheme = (district) => {
+    const themes = {
+        '桃園區': { gradient: 'from-pink-600 via-purple-600 to-indigo-700', icon: '🏙️', desc: '首善之都 ‧ 繁華薈萃' },
+        '中壢區': { gradient: 'from-blue-600 via-cyan-600 to-teal-700', icon: '🚆', desc: '雙城都心 ‧ 交通樞紐' },
+        '平鎮區': { gradient: 'from-orange-500 via-red-500 to-rose-700', icon: '🏮', desc: '客庄風情 ‧ 義民精神' },
+        '八德區': { gradient: 'from-emerald-500 via-green-600 to-teal-800', icon: '🦆', desc: '埤塘故鄉 ‧ 生態明珠' },
+        '楊梅區': { gradient: 'from-yellow-500 via-orange-500 to-red-600', icon: '🍵', desc: '茶香鐵道 ‧ 樂活楊梅' },
+        '蘆竹區': { gradient: 'from-sky-500 via-blue-500 to-indigo-600', icon: '✈️', desc: '航空都會 ‧ 國門之都' },
+        '大溪區': { gradient: 'from-amber-600 via-orange-600 to-red-700', icon: '🌉', desc: '木藝小鎮 ‧ 歷史走廊' },
+        '龍潭區': { gradient: 'from-teal-500 via-emerald-600 to-green-700', icon: '🐉', desc: '龍潭大池 ‧ 科技重鎮' },
+        '龜山區': { gradient: 'from-lime-500 via-green-500 to-emerald-700', icon: '⛰️', desc: '青春山城 ‧ 體育大區' },
+        '大園區': { gradient: 'from-cyan-500 via-blue-500 to-indigo-700', icon: '🛫', desc: '桃園驛站 ‧ 濱海風光' },
+        '觀音區': { gradient: 'from-pink-400 via-rose-500 to-red-600', icon: '🪷', desc: '蓮花之鄉 ‧ 觀音庇佑' },
+        '新屋區': { gradient: 'from-yellow-400 via-amber-500 to-orange-600', icon: '🌾', desc: '米之故鄉 ‧ 魚米之鄉' },
+        '復興區': { gradient: 'from-green-600 via-emerald-700 to-teal-900', icon: '🌲', desc: '原鄉山林 ‧ 泰雅風情' }
+    };
+    return themes[district] || { gradient: 'from-pink-600 via-purple-600 to-indigo-700', icon: '✨', desc: '科技城市 ‧ 魅力桃園' };
+};
+
 // --- 擴展表頭自訂欄寬元件 ---
 const ResizableTh = ({ children, minW = "100px", className = "" }) => (
     <th className="border border-gray-200 bg-gray-100 text-gray-700 sticky top-0 z-10 shadow-sm print-bg-gray-100 p-0 align-top">
@@ -139,7 +159,7 @@ const DEFAULT_NEW_PROJECT = {
     district: '桃園區', name: '', level: '國小', status: '規劃中', budgetSource1: '市府預算', budgetSource2: '公務預算', 
     budgetAmount: 0, startDate: '', endDate: '', agency: '養工處', scheduleMonth: '', isExcluded: false, isNotApproved: false,
     source: [], features: { pole: false, light: false, pickup: false, shelter: false },
-    shelterLength: 0, shelterCost: 0
+    shelterLength: 0, shelterCost: 0, beforeImage: '', afterImage: ''
 };
 
 // --- 由文本解析匯入之完整資料庫 ---
@@ -308,6 +328,34 @@ const INITIAL_DATA = [
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   
+  // --- 圖片上傳自動壓縮處理器 ---
+  const handleImageUpload = (e, fieldName, isNewProject = false) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            const MAX_WIDTH = 600; // 強度壓縮以適應現行資料庫架構
+            const scaleSize = MAX_WIDTH / img.width;
+            canvas.width = MAX_WIDTH;
+            canvas.height = img.height * scaleSize;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.6); // 降低品質至 60%
+            
+            if (isNewProject) {
+                setNewProject(prev => ({ ...prev, [fieldName]: dataUrl }));
+            } else {
+                setSelectedProject(prev => ({ ...prev, [fieldName]: dataUrl }));
+            }
+        };
+        img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+  };
+
   // --- 系統狀態 ---
   const [projects, setProjects] = useState(INITIAL_DATA);
   const [auditLogs, setAuditLogs] = useState([]);
@@ -1088,9 +1136,35 @@ export default function App() {
                             <div>
                                 <label className="block text-xs text-gray-500 mb-1">總經費(萬元)</label>
                                 <input type="number" className="w-full border p-2 rounded mb-2 focus:ring-2 focus:ring-pink-300 outline-none font-mono font-bold text-pink-600" value={selectedProject.budgetAmount} onChange={e => setSelectedProject({...selectedProject, budgetAmount: Number(e.target.value)})} />
-                                <div className="border-2 border-dashed border-pink-200 rounded-lg p-4 flex flex-col items-center justify-center text-pink-400 cursor-pointer hover:bg-pink-50 hover:border-pink-400 transition-colors"><ImageIcon className="w-6 h-6 mb-1"/><span className="text-xs font-bold">上傳現況照片</span></div>
                             </div>
                         </div>
+                        
+                        {/* 雙照片上傳區塊 */}
+                        <div className="border-t border-gray-200 pt-4 grid grid-cols-2 gap-4 mt-2">
+                            <div>
+                                <label className="block text-xs text-gray-500 mb-1 font-bold">施工前 / 現況照片</label>
+                                <div className="border-2 border-dashed border-gray-300 rounded-lg p-2 flex flex-col items-center justify-center text-gray-400 relative hover:bg-gray-50 transition-colors h-32 overflow-hidden shadow-sm">
+                                    {selectedProject.beforeImage ? (
+                                        <img src={selectedProject.beforeImage} alt="施工前" className="absolute inset-0 w-full h-full object-cover" />
+                                    ) : (
+                                        <><ImageIcon className="w-6 h-6 mb-1"/><span className="text-xs font-bold">點擊上傳現況照</span></>
+                                    )}
+                                    <input type="file" accept="image/*" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onChange={(e) => handleImageUpload(e, 'beforeImage', false)} />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-xs text-gray-500 mb-1 font-bold">完工 / 改善後照片</label>
+                                <div className="border-2 border-dashed border-emerald-300 rounded-lg p-2 flex flex-col items-center justify-center text-emerald-500 relative hover:bg-emerald-50 transition-colors h-32 overflow-hidden shadow-sm">
+                                    {selectedProject.afterImage ? (
+                                        <img src={selectedProject.afterImage} alt="改善後" className="absolute inset-0 w-full h-full object-cover" />
+                                    ) : (
+                                        <><Camera className="w-6 h-6 mb-1"/><span className="text-xs font-bold">點擊上傳改善後</span></>
+                                    )}
+                                    <input type="file" accept="image/*" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onChange={(e) => handleImageUpload(e, 'afterImage', false)} />
+                                </div>
+                            </div>
+                        </div>
+
                     </div>
                     <div className="p-4 border-t bg-gray-50 flex justify-between items-center">
                         <button className="flex items-center px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-bold rounded-lg shadow-md hover:shadow-lg transition-transform hover:-translate-y-0.5" onClick={() => setPromoProject(selectedProject)}>
@@ -1200,6 +1274,33 @@ export default function App() {
                                 <input type="number" className="w-full border border-gray-300 p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none font-mono font-bold text-pink-600 text-lg" value={newProject.budgetAmount} onChange={e => setNewProject({...newProject, budgetAmount: Number(e.target.value)})} />
                             </div>
                         </div>
+
+                        {/* 雙照片上傳區塊 */}
+                        <div className="border-t border-gray-200 pt-4 grid grid-cols-2 gap-4 mt-2">
+                            <div>
+                                <label className="block text-xs text-gray-500 mb-1 font-bold">施工前 / 現況照片</label>
+                                <div className="border-2 border-dashed border-gray-300 rounded-lg p-2 flex flex-col items-center justify-center text-gray-400 relative hover:bg-gray-50 transition-colors h-32 overflow-hidden shadow-sm">
+                                    {newProject.beforeImage ? (
+                                        <img src={newProject.beforeImage} alt="施工前" className="absolute inset-0 w-full h-full object-cover" />
+                                    ) : (
+                                        <><ImageIcon className="w-6 h-6 mb-1"/><span className="text-xs font-bold">點擊上傳現況照</span></>
+                                    )}
+                                    <input type="file" accept="image/*" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onChange={(e) => handleImageUpload(e, 'beforeImage', true)} />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-xs text-gray-500 mb-1 font-bold">完工 / 改善後照片</label>
+                                <div className="border-2 border-dashed border-emerald-300 rounded-lg p-2 flex flex-col items-center justify-center text-emerald-500 relative hover:bg-emerald-50 transition-colors h-32 overflow-hidden shadow-sm">
+                                    {newProject.afterImage ? (
+                                        <img src={newProject.afterImage} alt="改善後" className="absolute inset-0 w-full h-full object-cover" />
+                                    ) : (
+                                        <><Camera className="w-6 h-6 mb-1"/><span className="text-xs font-bold">點擊上傳改善後</span></>
+                                    )}
+                                    <input type="file" accept="image/*" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onChange={(e) => handleImageUpload(e, 'afterImage', true)} />
+                                </div>
+                            </div>
+                        </div>
+
                     </div>
                     <div className="p-4 border-t bg-white flex justify-end space-x-3">
                         <button className="px-5 py-2 rounded text-gray-500 hover:bg-gray-100 font-bold" onClick={() => setIsAddModalOpen(false)}>取消</button>
@@ -1224,18 +1325,21 @@ export default function App() {
                 </div>
 
                 {/* 宣傳圖卡本體 (螢幕與列印皆顯示) */}
-                <div className="bg-white w-[850px] max-w-[95vw] shadow-2xl rounded-2xl overflow-hidden print-promo-card my-8 relative flex flex-col mx-auto">
+                <div className="bg-white w-[850px] max-w-[95vw] shadow-2xl rounded-2xl overflow-hidden print-promo-card my-8 relative flex flex-col mx-auto border border-gray-100">
                     {/* 裝飾背景 */}
-                    <div className="absolute top-0 right-0 w-64 h-64 bg-pink-100 rounded-full blur-3xl opacity-50 -translate-y-1/2 translate-x-1/4 pointer-events-none"></div>
-                    <div className="absolute bottom-0 left-0 w-80 h-80 bg-blue-100 rounded-full blur-3xl opacity-50 translate-y-1/3 -translate-x-1/4 pointer-events-none"></div>
+                    <div className="absolute top-0 right-0 w-64 h-64 bg-white/20 rounded-full blur-3xl opacity-50 -translate-y-1/2 translate-x-1/4 pointer-events-none"></div>
+                    <div className="absolute bottom-0 left-0 w-80 h-80 bg-blue-100 rounded-full blur-3xl opacity-30 translate-y-1/3 -translate-x-1/4 pointer-events-none"></div>
 
-                    {/* 卡片標頭 */}
-                    <div className="bg-gradient-to-r from-pink-600 via-purple-600 to-indigo-700 p-8 text-white relative">
+                    {/* 卡片標頭 (動態套用行政區意象) */}
+                    <div className={`bg-gradient-to-r ${getDistrictTheme(promoProject.district).gradient} p-8 text-white relative`}>
                         <div className="absolute top-0 left-0 w-full h-full bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10"></div>
                         <div className="relative z-10">
                             <div className="flex justify-between items-end mb-4">
                                 <div>
-                                    <h3 className="text-pink-200 font-bold tracking-widest text-sm mb-1 drop-shadow">TAOYUAN CITY GOVERNMENT</h3>
+                                    <div className="flex items-center space-x-2 mb-2 text-white/90">
+                                        <span className="text-2xl">{getDistrictTheme(promoProject.district).icon}</span>
+                                        <span className="font-bold tracking-widest text-sm drop-shadow">{getDistrictTheme(promoProject.district).desc}</span>
+                                    </div>
                                     <h1 className="text-3xl font-black tracking-wider drop-shadow-md">桃園市通學廊道專案成果</h1>
                                 </div>
                                 <div className="bg-white/20 px-4 py-2 rounded-lg backdrop-blur-md border border-white/30 text-right">
@@ -1247,14 +1351,17 @@ export default function App() {
                     </div>
 
                     {/* 卡片內容區 */}
-                    <div className="p-8 flex-1 flex flex-col relative z-10 bg-white/80 backdrop-blur-sm">
+                    <div className="p-8 flex-1 flex flex-col relative z-10 bg-white/90 backdrop-blur-sm">
                         
                         {/* 學校標題與經費 */}
-                        <div className="flex justify-between items-start mb-8 border-b-2 border-gray-100 pb-6">
+                        <div className="flex justify-between items-start mb-6 border-b-2 border-gray-100 pb-4">
                             <div>
                                 <div className="flex items-center space-x-3 mb-2">
-                                    <span className="px-3 py-1 bg-gray-800 text-white rounded font-bold text-sm">{promoProject.district}</span>
-                                    <span className="px-3 py-1 bg-gray-100 text-gray-600 rounded font-bold text-sm border">{promoProject.level}</span>
+                                    <span className="px-3 py-1 bg-gray-800 text-white rounded font-bold text-sm shadow-sm">{promoProject.district}</span>
+                                    <span className="px-3 py-1 bg-gray-100 text-gray-600 rounded font-bold text-sm border shadow-sm">{promoProject.level}</span>
+                                    {promoProject.source && promoProject.source.length > 0 && (
+                                        <span className="px-2 py-1 bg-purple-50 text-purple-700 rounded font-bold text-xs border border-purple-100 shadow-sm">來源: {promoProject.source[0]}{promoProject.source.length > 1 ? '...' : ''}</span>
+                                    )}
                                 </div>
                                 <h2 className="text-4xl font-black text-gray-800 tracking-tight">{promoProject.name}</h2>
                             </div>
@@ -1266,52 +1373,71 @@ export default function App() {
                             </div>
                         </div>
 
-                        {/* 照片佔位區 (16:9) */}
-                        <div className="w-full bg-gray-100 rounded-xl border-2 border-dashed border-gray-300 flex flex-col items-center justify-center text-gray-400 mb-8 relative overflow-hidden group shadow-sm" style={{ aspectRatio: '16/7' }}>
-                            <Camera className="w-16 h-16 mb-4 opacity-50 group-hover:scale-110 transition-transform" />
-                            <p className="font-bold text-lg tracking-widest opacity-70">建置後實景照片置放區</p>
-                            <p className="text-sm opacity-50 mt-2 font-mono">請將照片拖曳至此處或透過後台更新</p>
+                        {/* 雙照片對照區 (16:9 split into 2) */}
+                        <div className="grid grid-cols-2 gap-4 mb-6">
+                            <div className="relative rounded-xl overflow-hidden border border-gray-200 shadow-sm group" style={{ aspectRatio: '4/3' }}>
+                                <div className="absolute top-2 left-2 bg-gray-900/70 text-white px-3 py-1 rounded-full text-xs font-bold z-10 backdrop-blur-sm border border-gray-700">施工前 (Before)</div>
+                                {promoProject.beforeImage ? (
+                                    <img src={promoProject.beforeImage} alt="施工前" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                                ) : (
+                                    <div className="w-full h-full bg-gray-100 flex flex-col items-center justify-center text-gray-400">
+                                        <ImageIcon className="w-10 h-10 mb-2 opacity-30" />
+                                        <span className="text-sm font-bold opacity-50">尚未提供現況照片</span>
+                                    </div>
+                                )}
+                            </div>
+                            <div className="relative rounded-xl overflow-hidden border border-emerald-200 shadow-sm group" style={{ aspectRatio: '4/3' }}>
+                                <div className="absolute top-2 left-2 bg-emerald-600/90 text-white px-3 py-1 rounded-full text-xs font-bold z-10 backdrop-blur-sm border border-emerald-500 shadow-md">改善後 (After)</div>
+                                {promoProject.afterImage ? (
+                                    <img src={promoProject.afterImage} alt="改善後" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                                ) : (
+                                    <div className="w-full h-full bg-emerald-50 flex flex-col items-center justify-center text-emerald-600/50">
+                                        <Camera className="w-10 h-10 mb-2 opacity-30" />
+                                        <span className="text-sm font-bold opacity-50">尚未提供完工照片</span>
+                                    </div>
+                                )}
+                            </div>
                         </div>
 
                         {/* 四大亮點指標 */}
-                        <div className="mb-8">
+                        <div className="mb-6">
                             <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center border-l-4 border-purple-500 pl-3">建設亮點指標</h3>
                             <div className="grid grid-cols-4 gap-4">
-                                <div className={`p-4 rounded-xl border-2 flex flex-col items-center text-center transition-all ${promoProject.features?.pole ? 'border-amber-400 bg-amber-50 shadow-md transform -translate-y-1' : 'border-gray-100 bg-gray-50 opacity-40 grayscale'}`}>
-                                    <div className={`p-3 rounded-full mb-3 ${promoProject.features?.pole ? 'bg-amber-100' : 'bg-gray-200'}`}><Zap className={`w-8 h-8 ${promoProject.features?.pole ? 'text-amber-500' : 'text-gray-400'}`}/></div>
-                                    <span className="font-bold text-gray-800">電桿地下化</span>
+                                <div className={`p-3 rounded-xl border-2 flex flex-col items-center text-center transition-all ${promoProject.features?.pole ? 'border-amber-400 bg-amber-50 shadow-md transform -translate-y-1' : 'border-gray-100 bg-gray-50 opacity-40 grayscale'}`}>
+                                    <div className={`p-3 rounded-full mb-2 ${promoProject.features?.pole ? 'bg-amber-100' : 'bg-gray-200'}`}><Zap className={`w-6 h-6 ${promoProject.features?.pole ? 'text-amber-500' : 'text-gray-400'}`}/></div>
+                                    <span className="font-bold text-gray-800 text-sm">電桿地下化</span>
                                 </div>
-                                <div className={`p-4 rounded-xl border-2 flex flex-col items-center text-center transition-all ${promoProject.features?.light ? 'border-yellow-400 bg-yellow-50 shadow-md transform -translate-y-1' : 'border-gray-100 bg-gray-50 opacity-40 grayscale'}`}>
-                                    <div className={`p-3 rounded-full mb-3 ${promoProject.features?.light ? 'bg-yellow-100' : 'bg-gray-200'}`}><Lightbulb className={`w-8 h-8 ${promoProject.features?.light ? 'text-yellow-500' : 'text-gray-400'}`}/></div>
-                                    <span className="font-bold text-gray-800">雙色溫路燈</span>
+                                <div className={`p-3 rounded-xl border-2 flex flex-col items-center text-center transition-all ${promoProject.features?.light ? 'border-yellow-400 bg-yellow-50 shadow-md transform -translate-y-1' : 'border-gray-100 bg-gray-50 opacity-40 grayscale'}`}>
+                                    <div className={`p-3 rounded-full mb-2 ${promoProject.features?.light ? 'bg-yellow-100' : 'bg-gray-200'}`}><Lightbulb className={`w-6 h-6 ${promoProject.features?.light ? 'text-yellow-500' : 'text-gray-400'}`}/></div>
+                                    <span className="font-bold text-gray-800 text-sm">雙色溫路燈</span>
                                 </div>
-                                <div className={`p-4 rounded-xl border-2 flex flex-col items-center text-center transition-all ${promoProject.features?.pickup ? 'border-blue-400 bg-blue-50 shadow-md transform -translate-y-1' : 'border-gray-100 bg-gray-50 opacity-40 grayscale'}`}>
-                                    <div className={`p-3 rounded-full mb-3 ${promoProject.features?.pickup ? 'bg-blue-100' : 'bg-gray-200'}`}><Car className={`w-8 h-8 ${promoProject.features?.pickup ? 'text-blue-500' : 'text-gray-400'}`}/></div>
-                                    <span className="font-bold text-gray-800">避車接送區</span>
+                                <div className={`p-3 rounded-xl border-2 flex flex-col items-center text-center transition-all ${promoProject.features?.pickup ? 'border-blue-400 bg-blue-50 shadow-md transform -translate-y-1' : 'border-gray-100 bg-gray-50 opacity-40 grayscale'}`}>
+                                    <div className={`p-3 rounded-full mb-2 ${promoProject.features?.pickup ? 'bg-blue-100' : 'bg-gray-200'}`}><Car className={`w-6 h-6 ${promoProject.features?.pickup ? 'text-blue-500' : 'text-gray-400'}`}/></div>
+                                    <span className="font-bold text-gray-800 text-sm">避車接送區</span>
                                 </div>
-                                <div className={`p-4 rounded-xl border-2 flex flex-col items-center text-center transition-all ${promoProject.features?.shelter ? 'border-emerald-400 bg-emerald-50 shadow-md transform -translate-y-1 relative overflow-hidden' : 'border-gray-100 bg-gray-50 opacity-40 grayscale'}`}>
-                                    {promoProject.features?.shelter && promoProject.shelterLength > 0 && <div className="absolute top-0 right-0 bg-emerald-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-bl-lg">長度 {promoProject.shelterLength}m</div>}
-                                    <div className={`p-3 rounded-full mb-3 ${promoProject.features?.shelter ? 'bg-emerald-100' : 'bg-gray-200'}`}><Umbrella className={`w-8 h-8 ${promoProject.features?.shelter ? 'text-emerald-500' : 'text-gray-400'}`}/></div>
-                                    <span className="font-bold text-gray-800">連通式雨遮</span>
+                                <div className={`p-3 rounded-xl border-2 flex flex-col items-center text-center transition-all relative overflow-hidden ${promoProject.features?.shelter ? 'border-emerald-400 bg-emerald-50 shadow-md transform -translate-y-1' : 'border-gray-100 bg-gray-50 opacity-40 grayscale'}`}>
+                                    {promoProject.features?.shelter && promoProject.shelterLength > 0 && <div className="absolute top-0 right-0 bg-emerald-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-bl-lg shadow-sm">長 {promoProject.shelterLength}m</div>}
+                                    <div className={`p-3 rounded-full mb-2 ${promoProject.features?.shelter ? 'bg-emerald-100' : 'bg-gray-200'}`}><Umbrella className={`w-6 h-6 ${promoProject.features?.shelter ? 'text-emerald-500' : 'text-gray-400'}`}/></div>
+                                    <span className="font-bold text-gray-800 text-sm">連通式雨遮</span>
                                 </div>
                             </div>
                         </div>
 
                         {/* 底部詳細資訊 */}
-                        <div className="grid grid-cols-3 gap-6 pt-6 border-t-2 border-gray-100 mt-auto">
+                        <div className="grid grid-cols-3 gap-6 pt-5 border-t-2 border-gray-100 mt-auto bg-gray-50/50 -mx-8 -mb-8 p-8 rounded-b-xl">
                             <div>
-                                <p className="text-xs text-gray-400 font-bold mb-1">補助單位 / 預算來源</p>
-                                <p className="font-bold text-gray-700">{promoProject.budgetSource1} {promoProject.budgetSource2 ? `(${promoProject.budgetSource2})` : ''}</p>
+                                <p className="text-xs text-gray-500 font-bold mb-1">補助單位 / 預算來源</p>
+                                <p className="font-bold text-gray-800 text-sm">{promoProject.budgetSource1} {promoProject.budgetSource2 ? `(${promoProject.budgetSource2})` : ''}</p>
                             </div>
                             <div>
-                                <p className="text-xs text-gray-400 font-bold mb-1">施工期程</p>
-                                <p className="font-bold text-gray-700 font-mono text-sm tracking-tighter">
+                                <p className="text-xs text-gray-500 font-bold mb-1">施工期程</p>
+                                <p className="font-bold text-gray-800 font-mono text-sm tracking-tighter">
                                     {promoProject.startDate || '未定'} ~ {promoProject.endDate || '未定'}
                                 </p>
                             </div>
                             <div className="text-right">
-                                <p className="text-xs text-gray-400 font-bold mb-1">執行機關</p>
-                                <p className="font-bold text-gray-700">{promoProject.agency}</p>
+                                <p className="text-xs text-gray-500 font-bold mb-1">執行機關</p>
+                                <p className="font-bold text-gray-800 text-sm">{promoProject.agency}</p>
                             </div>
                         </div>
                     </div>
@@ -1567,17 +1693,21 @@ export default function App() {
 
         {/* 情境 2：列印單張宣傳圖卡 */}
         {promoProject && (
-            <div className="w-[850px] mx-auto mt-8 border rounded-2xl overflow-hidden shadow-none">
+            <div className="w-[850px] mx-auto mt-8 border rounded-2xl overflow-hidden shadow-none print-promo-card relative flex flex-col">
                 {/* 裝飾背景 */}
-                <div className="absolute top-0 right-0 w-64 h-64 bg-pink-100 rounded-full blur-3xl opacity-50 -translate-y-1/2 translate-x-1/4 pointer-events-none"></div>
-                <div className="absolute bottom-0 left-0 w-80 h-80 bg-blue-100 rounded-full blur-3xl opacity-50 translate-y-1/3 -translate-x-1/4 pointer-events-none"></div>
+                <div className="absolute top-0 right-0 w-64 h-64 bg-white/20 rounded-full blur-3xl opacity-50 -translate-y-1/2 translate-x-1/4 pointer-events-none"></div>
+                <div className="absolute bottom-0 left-0 w-80 h-80 bg-blue-100 rounded-full blur-3xl opacity-30 translate-y-1/3 -translate-x-1/4 pointer-events-none"></div>
 
-                {/* 卡片標頭 */}
-                <div className="bg-gradient-to-r from-pink-600 via-purple-600 to-indigo-700 p-8 text-white relative" style={{background: 'linear-gradient(to right, #db2777, #9333ea, #4338ca)'}}>
+                {/* 卡片標頭 (動態套用行政區意象) */}
+                <div className={`bg-gradient-to-r ${getDistrictTheme(promoProject.district).gradient} p-8 text-white relative`}>
+                    <div className="absolute top-0 left-0 w-full h-full bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10"></div>
                     <div className="relative z-10">
                         <div className="flex justify-between items-end mb-4">
                             <div>
-                                <h3 className="text-pink-200 font-bold tracking-widest text-sm mb-1 drop-shadow">TAOYUAN CITY GOVERNMENT</h3>
+                                <div className="flex items-center space-x-2 mb-2 text-white/90">
+                                    <span className="text-2xl">{getDistrictTheme(promoProject.district).icon}</span>
+                                    <span className="font-bold tracking-widest text-sm drop-shadow">{getDistrictTheme(promoProject.district).desc}</span>
+                                </div>
                                 <h1 className="text-3xl font-black tracking-wider drop-shadow-md text-white">桃園市通學廊道專案成果</h1>
                             </div>
                             <div className="bg-black/20 px-4 py-2 rounded-lg border border-white/30 text-right">
@@ -1592,11 +1722,14 @@ export default function App() {
                 <div className="p-8 flex-1 flex flex-col relative z-10 bg-white">
                     
                     {/* 學校標題與經費 */}
-                    <div className="flex justify-between items-start mb-8 border-b-2 border-gray-100 pb-6">
+                    <div className="flex justify-between items-start mb-6 border-b-2 border-gray-100 pb-4">
                         <div>
                             <div className="flex items-center space-x-3 mb-2">
-                                <span className="px-3 py-1 bg-gray-800 text-white rounded font-bold text-sm">{promoProject.district}</span>
-                                <span className="px-3 py-1 bg-gray-100 text-gray-600 rounded font-bold text-sm border">{promoProject.level}</span>
+                                <span className="px-3 py-1 bg-gray-800 text-white rounded font-bold text-sm shadow-sm">{promoProject.district}</span>
+                                <span className="px-3 py-1 bg-gray-100 text-gray-600 rounded font-bold text-sm border shadow-sm">{promoProject.level}</span>
+                                {promoProject.source && promoProject.source.length > 0 && (
+                                    <span className="px-2 py-1 bg-purple-50 text-purple-700 rounded font-bold text-xs border border-purple-100 shadow-sm">來源: {promoProject.source[0]}{promoProject.source.length > 1 ? '...' : ''}</span>
+                                )}
                             </div>
                             <h2 className="text-4xl font-black text-gray-800 tracking-tight">{promoProject.name}</h2>
                         </div>
@@ -1608,51 +1741,71 @@ export default function App() {
                         </div>
                     </div>
 
-                    {/* 照片佔位區 (16:9) */}
-                    <div className="w-full bg-gray-100 rounded-xl border-2 border-dashed border-gray-300 flex flex-col items-center justify-center text-gray-400 mb-8 relative overflow-hidden group shadow-sm" style={{ aspectRatio: '16/7' }}>
-                        <Camera className="w-16 h-16 mb-4 opacity-50" />
-                        <p className="font-bold text-lg tracking-widest opacity-70">建置後實景照片置放區</p>
+                    {/* 雙照片對照區 (16:9 split into 2) */}
+                    <div className="grid grid-cols-2 gap-4 mb-6">
+                        <div className="relative rounded-xl overflow-hidden border border-gray-200 shadow-sm group" style={{ aspectRatio: '4/3' }}>
+                            <div className="absolute top-2 left-2 bg-gray-900/70 text-white px-3 py-1 rounded-full text-xs font-bold z-10 backdrop-blur-sm border border-gray-700">施工前 (Before)</div>
+                            {promoProject.beforeImage ? (
+                                <img src={promoProject.beforeImage} alt="施工前" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                            ) : (
+                                <div className="w-full h-full bg-gray-100 flex flex-col items-center justify-center text-gray-400">
+                                    <ImageIcon className="w-10 h-10 mb-2 opacity-30" />
+                                    <span className="text-sm font-bold opacity-50">尚未提供現況照片</span>
+                                </div>
+                            )}
+                        </div>
+                        <div className="relative rounded-xl overflow-hidden border border-emerald-200 shadow-sm group" style={{ aspectRatio: '4/3' }}>
+                            <div className="absolute top-2 left-2 bg-emerald-600/90 text-white px-3 py-1 rounded-full text-xs font-bold z-10 backdrop-blur-sm border border-emerald-500 shadow-md">改善後 (After)</div>
+                            {promoProject.afterImage ? (
+                                <img src={promoProject.afterImage} alt="改善後" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                            ) : (
+                                <div className="w-full h-full bg-emerald-50 flex flex-col items-center justify-center text-emerald-600/50">
+                                    <Camera className="w-10 h-10 mb-2 opacity-30" />
+                                    <span className="text-sm font-bold opacity-50">尚未提供完工照片</span>
+                                </div>
+                            )}
+                        </div>
                     </div>
 
                     {/* 四大亮點指標 */}
-                    <div className="mb-8">
+                    <div className="mb-6">
                         <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center border-l-4 border-purple-500 pl-3">建設亮點指標</h3>
                         <div className="grid grid-cols-4 gap-4">
-                            <div className={`p-4 rounded-xl border-2 flex flex-col items-center text-center ${promoProject.features?.pole ? 'border-amber-400 bg-amber-50' : 'border-gray-100 bg-gray-50 opacity-40 grayscale'}`}>
-                                <div className={`p-3 rounded-full mb-3 ${promoProject.features?.pole ? 'bg-amber-100' : 'bg-gray-200'}`}><Zap className={`w-8 h-8 ${promoProject.features?.pole ? 'text-amber-500' : 'text-gray-400'}`}/></div>
-                                <span className="font-bold text-gray-800">電桿地下化</span>
+                            <div className={`p-3 rounded-xl border-2 flex flex-col items-center text-center transition-all ${promoProject.features?.pole ? 'border-amber-400 bg-amber-50' : 'border-gray-100 bg-gray-50 opacity-40 grayscale'}`}>
+                                <div className={`p-3 rounded-full mb-2 ${promoProject.features?.pole ? 'bg-amber-100' : 'bg-gray-200'}`}><Zap className={`w-6 h-6 ${promoProject.features?.pole ? 'text-amber-500' : 'text-gray-400'}`}/></div>
+                                <span className="font-bold text-gray-800 text-sm">電桿地下化</span>
                             </div>
-                            <div className={`p-4 rounded-xl border-2 flex flex-col items-center text-center ${promoProject.features?.light ? 'border-yellow-400 bg-yellow-50' : 'border-gray-100 bg-gray-50 opacity-40 grayscale'}`}>
-                                <div className={`p-3 rounded-full mb-3 ${promoProject.features?.light ? 'bg-yellow-100' : 'bg-gray-200'}`}><Lightbulb className={`w-8 h-8 ${promoProject.features?.light ? 'text-yellow-500' : 'text-gray-400'}`}/></div>
-                                <span className="font-bold text-gray-800">雙色溫路燈</span>
+                            <div className={`p-3 rounded-xl border-2 flex flex-col items-center text-center transition-all ${promoProject.features?.light ? 'border-yellow-400 bg-yellow-50' : 'border-gray-100 bg-gray-50 opacity-40 grayscale'}`}>
+                                <div className={`p-3 rounded-full mb-2 ${promoProject.features?.light ? 'bg-yellow-100' : 'bg-gray-200'}`}><Lightbulb className={`w-6 h-6 ${promoProject.features?.light ? 'text-yellow-500' : 'text-gray-400'}`}/></div>
+                                <span className="font-bold text-gray-800 text-sm">雙色溫路燈</span>
                             </div>
-                            <div className={`p-4 rounded-xl border-2 flex flex-col items-center text-center ${promoProject.features?.pickup ? 'border-blue-400 bg-blue-50' : 'border-gray-100 bg-gray-50 opacity-40 grayscale'}`}>
-                                <div className={`p-3 rounded-full mb-3 ${promoProject.features?.pickup ? 'bg-blue-100' : 'bg-gray-200'}`}><Car className={`w-8 h-8 ${promoProject.features?.pickup ? 'text-blue-500' : 'text-gray-400'}`}/></div>
-                                <span className="font-bold text-gray-800">避車接送區</span>
+                            <div className={`p-3 rounded-xl border-2 flex flex-col items-center text-center transition-all ${promoProject.features?.pickup ? 'border-blue-400 bg-blue-50' : 'border-gray-100 bg-gray-50 opacity-40 grayscale'}`}>
+                                <div className={`p-3 rounded-full mb-2 ${promoProject.features?.pickup ? 'bg-blue-100' : 'bg-gray-200'}`}><Car className={`w-6 h-6 ${promoProject.features?.pickup ? 'text-blue-500' : 'text-gray-400'}`}/></div>
+                                <span className="font-bold text-gray-800 text-sm">避車接送區</span>
                             </div>
-                            <div className={`p-4 rounded-xl border-2 flex flex-col items-center text-center relative overflow-hidden ${promoProject.features?.shelter ? 'border-emerald-400 bg-emerald-50' : 'border-gray-100 bg-gray-50 opacity-40 grayscale'}`}>
-                                {promoProject.features?.shelter && promoProject.shelterLength > 0 && <div className="absolute top-0 right-0 bg-emerald-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-bl-lg">長度 {promoProject.shelterLength}m</div>}
-                                <div className={`p-3 rounded-full mb-3 ${promoProject.features?.shelter ? 'bg-emerald-100' : 'bg-gray-200'}`}><Umbrella className={`w-8 h-8 ${promoProject.features?.shelter ? 'text-emerald-500' : 'text-gray-400'}`}/></div>
-                                <span className="font-bold text-gray-800">連通式雨遮</span>
+                            <div className={`p-3 rounded-xl border-2 flex flex-col items-center text-center transition-all relative overflow-hidden ${promoProject.features?.shelter ? 'border-emerald-400 bg-emerald-50' : 'border-gray-100 bg-gray-50 opacity-40 grayscale'}`}>
+                                {promoProject.features?.shelter && promoProject.shelterLength > 0 && <div className="absolute top-0 right-0 bg-emerald-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-bl-lg shadow-sm">長 {promoProject.shelterLength}m</div>}
+                                <div className={`p-3 rounded-full mb-2 ${promoProject.features?.shelter ? 'bg-emerald-100' : 'bg-gray-200'}`}><Umbrella className={`w-6 h-6 ${promoProject.features?.shelter ? 'text-emerald-500' : 'text-gray-400'}`}/></div>
+                                <span className="font-bold text-gray-800 text-sm">連通式雨遮</span>
                             </div>
                         </div>
                     </div>
 
                     {/* 底部詳細資訊 */}
-                    <div className="grid grid-cols-3 gap-6 pt-6 border-t-2 border-gray-100 mt-auto">
+                    <div className="grid grid-cols-3 gap-6 pt-5 border-t-2 border-gray-100 mt-auto bg-gray-50/50 -mx-8 -mb-8 p-8 rounded-b-xl">
                         <div>
-                            <p className="text-xs text-gray-400 font-bold mb-1">補助單位 / 預算來源</p>
-                            <p className="font-bold text-gray-700">{promoProject.budgetSource1} {promoProject.budgetSource2 ? `(${promoProject.budgetSource2})` : ''}</p>
+                            <p className="text-xs text-gray-500 font-bold mb-1">補助單位 / 預算來源</p>
+                            <p className="font-bold text-gray-800 text-sm">{promoProject.budgetSource1} {promoProject.budgetSource2 ? `(${promoProject.budgetSource2})` : ''}</p>
                         </div>
                         <div>
-                            <p className="text-xs text-gray-400 font-bold mb-1">施工期程</p>
-                            <p className="font-bold text-gray-700 font-mono text-sm tracking-tighter">
+                            <p className="text-xs text-gray-500 font-bold mb-1">施工期程</p>
+                            <p className="font-bold text-gray-800 font-mono text-sm tracking-tighter">
                                 {promoProject.startDate || '未定'} ~ {promoProject.endDate || '未定'}
                             </p>
                         </div>
                         <div className="text-right">
-                            <p className="text-xs text-gray-400 font-bold mb-1">執行機關</p>
-                            <p className="font-bold text-gray-700">{promoProject.agency}</p>
+                            <p className="text-xs text-gray-500 font-bold mb-1">執行機關</p>
+                            <p className="font-bold text-gray-800 text-sm">{promoProject.agency}</p>
                         </div>
                     </div>
                 </div>
