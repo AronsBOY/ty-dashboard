@@ -1,3 +1,4 @@
+/* global __firebase_config, __app_id, __initial_auth_token */
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { LayoutDashboard, Building2, Calendar, Database, Download, Upload, MapPin, Image as ImageIcon, Search, AlertCircle, CheckSquare, Square, Check, MessageCircle, X, Send, FileText, Clock, History, Key, Printer, Settings, Plus, Paperclip, FileOutput, Zap, Lightbulb, Car, Umbrella, Camera } from 'lucide-react';
@@ -1200,7 +1201,7 @@ export default function App() {
                             <div><label className="block text-xs text-gray-500 mb-1 font-bold">預計完工日</label><input type="text" className="w-full border border-gray-300 p-2 rounded focus:ring-2 focus:ring-pink-300 outline-none font-mono" placeholder="YYYY/MM/DD" value={newProject.endDate} onChange={e => setNewProject({...newProject, endDate: e.target.value})} /></div>
                             
                             <div className="col-span-2">
-                                <label className="block text-xs text-gray-500 mb-1 font-bold">案件來源 (可多選) <span className="text-pink-500 font-normal">可手動輸入並按 Enter，或從清單挑選</span></label>
+                                <label className="block text-xs text-gray-500 mb-1 font-bold">案件來源 (可多選) <span className="text-pink-500 font-normal">可手掌握並按 Enter，或從清單挑選</span></label>
                                 <MultiTagInput 
                                     tags={newProject.source || []} 
                                     onChange={(newTags) => setNewProject({...newProject, source: newTags})}
