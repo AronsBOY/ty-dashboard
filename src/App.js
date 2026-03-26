@@ -1,7 +1,7 @@
 /* global __firebase_config, __app_id, __initial_auth_token */
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { LayoutDashboard, Building2, Calendar, Database, Download, Upload, MapPin, Image as ImageIcon, Search, CheckSquare, Square, Check, MessageCircle, X, Send, FileText, Clock, History, Key, Printer, Settings, Plus, Paperclip, FileOutput, Zap, Lightbulb, Car, Umbrella, Camera } from 'lucide-react';
+import { LayoutDashboard, Building2, Calendar, Database, Download, Upload, MapPin, Image as ImageIcon, Search, CheckSquare, Square, Check, MessageCircle, X, Send, FileText, Clock, History, Key, Printer, Settings, Plus, Paperclip, FileOutput, Zap, Lightbulb, Car, Umbrella, Camera, RefreshCw } from 'lucide-react';
 
 // --- 雲端資料庫 (Firebase) 模組載入 ---
 import { initializeApp } from 'firebase/app';
@@ -369,14 +369,36 @@ export default function App() {
     reader.readAsDataURL(file);
   };
 
-  // --- 系統狀態 ---
-  const [projects, setProjects] = useState(INITIAL_DATA);
-  const [auditLogs, setAuditLogs] = useState([]);
+  // --- 系統狀態 (強化：本機與雲端雙軌載入) ---
+  const loadLocalData = () => {
+      if (typeof window !== 'undefined') {
+          try {
+              const saved = localStorage.getItem('ty_projects_backup');
+              if (saved) return JSON.parse(saved);
+          } catch(e) { console.error("本機備份讀取失敗", e); }
+      }
+      return INITIAL_DATA;
+  };
+  
+  const loadLocalLogs = () => {
+      if (typeof window !== 'undefined') {
+          try {
+              const saved = localStorage.getItem('ty_logs_backup');
+              if (saved) return JSON.parse(saved);
+          } catch(e) {}
+      }
+      return [];
+  };
+
+  const [projects, setProjects] = useState(loadLocalData);
+  const [auditLogs, setAuditLogs] = useState(loadLocalLogs);
   const [user, setUser] = useState(null);
+  const [isSyncing, setIsSyncing] = useState(false); // 新增：儲存狀態
 
   const [filterDist, setFilterDist] = useState('All');
   const [schoolDistrictFilter, setSchoolDistrictFilter] = useState('All');
   const [tableStatusFilter, setTableStatusFilter] = useState('All'); 
+  const [featureFilter, setFeatureFilter] = useState('All'); // 新增：四大指標篩選狀態
   const [selectedProject, setSelectedProject] = useState(null);
   
   // --- 新增：宣傳圖卡專用 State ---
@@ -453,7 +475,7 @@ export default function App() {
     return () => unsubscribe();
   }, [user]);
 
-  // 統一的寫入雲端與紀錄 Audit Log 函數
+  // 統一的寫入雲端與紀錄 Audit Log 函數 (強化：雙軌儲存)
   const persistData = async (newProjects, actionDesc) => {
     setProjects(newProjects); // Optimistic UI: 畫面立刻反應，不卡頓
     
@@ -465,6 +487,14 @@ export default function App() {
     const updatedLogs = [newLog, ...auditLogs].slice(0, 200);
     setAuditLogs(updatedLogs);
 
+    // --- 強化核心：永遠備份至本機 LocalStorage，防止雲端斷線 ---
+    try {
+        localStorage.setItem('ty_projects_backup', JSON.stringify(newProjects));
+        localStorage.setItem('ty_logs_backup', JSON.stringify(updatedLogs));
+    } catch (e) {
+        console.error("本機備份失敗:", e);
+    }
+
     if (!user || !db) return; // 防呆：若無 Firebase 實例則僅保留本機狀態，不寫入雲端
     
     try {
@@ -473,6 +503,16 @@ export default function App() {
     } catch (error) {
         console.error("儲存至雲端失敗:", error);
     }
+  };
+
+  // --- 新增：強制更新儲存功能 ---
+  const handleForceSync = async () => {
+      setIsSyncing(true);
+      await persistData(projects, "使用者手動觸發【更新儲存】");
+      setTimeout(() => {
+          setIsSyncing(false);
+          alert("✅ 資料已成功強制儲存至本機備份！\n即使尚未連線雲端，下次開啟仍將自動接續本次進度。");
+      }, 800);
   };
 
   // --- AI 戰情特助 State ---
@@ -539,9 +579,20 @@ export default function App() {
   }, [filteredByDistrictProjects]);
 
   const displayProjects = useMemo(() => {
-    if (tableStatusFilter === 'All') return filteredByDistrictProjects;
-    return filteredByDistrictProjects.filter(p => p.status === tableStatusFilter);
-  }, [filteredByDistrictProjects, tableStatusFilter]);
+    let result = filteredByDistrictProjects;
+    
+    // 狀態篩選 (如：已完工、施工中)
+    if (tableStatusFilter !== 'All') {
+        result = result.filter(p => p.status === tableStatusFilter);
+    }
+    
+    // 指標篩選 (如：雨遮、電桿)
+    if (featureFilter !== 'All') {
+        result = result.filter(p => p.features && p.features[featureFilter]);
+    }
+    
+    return result;
+  }, [filteredByDistrictProjects, tableStatusFilter, featureFilter]);
 
   const kpis = useMemo(() => {
     let total = projects.length, completed = 0, inProgress = 0, planning = 0, paused = 0, duplicatedCount = 0;
@@ -855,21 +906,21 @@ export default function App() {
         
         {/* --- 新增：四大指標數據列 --- */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3 print-grid-cols-4">
-            <div className="p-3 rounded-lg border border-amber-200 bg-amber-50 flex justify-between items-center shadow-sm">
-                <div className="flex items-center text-amber-700 font-bold text-sm"><Zap className="w-4 h-4 mr-1"/> 電桿地下化</div>
-                <div className="text-xl font-black text-amber-800">{tableStats.poleCount}</div>
+            <div onClick={() => setFeatureFilter(featureFilter === 'pole' ? 'All' : 'pole')} className={`p-3 rounded-lg border flex justify-between items-center shadow-sm cursor-pointer transition-all ${featureFilter === 'pole' ? 'border-amber-500 bg-amber-500 text-white print-bg-amber-500 print-text-white' : 'border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-700 print-bg-amber-50'}`}>
+                <div className={`flex items-center font-bold text-sm ${featureFilter === 'pole' ? 'text-white' : 'text-amber-700'}`}><Zap className="w-4 h-4 mr-1"/> 電桿地下化</div>
+                <div className={`text-xl font-black ${featureFilter === 'pole' ? 'text-white' : 'text-amber-800'}`}>{tableStats.poleCount}</div>
             </div>
-            <div className="p-3 rounded-lg border border-yellow-200 bg-yellow-50 flex justify-between items-center shadow-sm">
-                <div className="flex items-center text-yellow-700 font-bold text-sm"><Lightbulb className="w-4 h-4 mr-1"/> 路燈雙色溫</div>
-                <div className="text-xl font-black text-yellow-800">{tableStats.lightCount}</div>
+            <div onClick={() => setFeatureFilter(featureFilter === 'light' ? 'All' : 'light')} className={`p-3 rounded-lg border flex justify-between items-center shadow-sm cursor-pointer transition-all ${featureFilter === 'light' ? 'border-yellow-500 bg-yellow-500 text-white print-bg-yellow-500 print-text-white' : 'border-yellow-200 bg-yellow-50 hover:bg-yellow-100 text-yellow-700 print-bg-yellow-50'}`}>
+                <div className={`flex items-center font-bold text-sm ${featureFilter === 'light' ? 'text-white' : 'text-yellow-700'}`}><Lightbulb className="w-4 h-4 mr-1"/> 路燈雙色溫</div>
+                <div className={`text-xl font-black ${featureFilter === 'light' ? 'text-white' : 'text-yellow-800'}`}>{tableStats.lightCount}</div>
             </div>
-            <div className="p-3 rounded-lg border border-blue-200 bg-blue-50 flex justify-between items-center shadow-sm">
-                <div className="flex items-center text-blue-700 font-bold text-sm"><Car className="w-4 h-4 mr-1"/> 接送區</div>
-                <div className="text-xl font-black text-blue-800">{tableStats.pickupCount}</div>
+            <div onClick={() => setFeatureFilter(featureFilter === 'pickup' ? 'All' : 'pickup')} className={`p-3 rounded-lg border flex justify-between items-center shadow-sm cursor-pointer transition-all ${featureFilter === 'pickup' ? 'border-blue-500 bg-blue-500 text-white print-bg-blue-500 print-text-white' : 'border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 print-bg-blue-50'}`}>
+                <div className={`flex items-center font-bold text-sm ${featureFilter === 'pickup' ? 'text-white' : 'text-blue-700'}`}><Car className="w-4 h-4 mr-1"/> 接送區</div>
+                <div className={`text-xl font-black ${featureFilter === 'pickup' ? 'text-white' : 'text-blue-800'}`}>{tableStats.pickupCount}</div>
             </div>
-            <div className="p-3 rounded-lg border border-emerald-200 bg-emerald-50 flex justify-between items-center shadow-sm">
-                <div className="flex items-center text-emerald-700 font-bold text-sm"><Umbrella className="w-4 h-4 mr-1"/> 雨遮</div>
-                <div className="text-xl font-black text-emerald-800">{tableStats.shelterCount}</div>
+            <div onClick={() => setFeatureFilter(featureFilter === 'shelter' ? 'All' : 'shelter')} className={`p-3 rounded-lg border flex justify-between items-center shadow-sm cursor-pointer transition-all ${featureFilter === 'shelter' ? 'border-emerald-500 bg-emerald-500 text-white print-bg-emerald-500 print-text-white' : 'border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 print-bg-emerald-50'}`}>
+                <div className={`flex items-center font-bold text-sm ${featureFilter === 'shelter' ? 'text-white' : 'text-emerald-700'}`}><Umbrella className="w-4 h-4 mr-1"/> 雨遮</div>
+                <div className={`text-xl font-black ${featureFilter === 'shelter' ? 'text-white' : 'text-emerald-800'}`}>{tableStats.shelterCount}</div>
             </div>
         </div>
       </div>
@@ -1562,14 +1613,19 @@ export default function App() {
                 </h2>
                 <span className="ml-4 bg-pink-50 text-pink-700 px-3 py-1 rounded-full text-xs font-bold border border-pink-100 flex items-center shadow-sm"><Calendar className="w-3 h-3 mr-1"/> {currentDate}</span>
             </div>
-            <div className="flex items-center space-x-4">
-                <span className="flex items-center text-sm text-green-600 font-bold animate-pulse">
-                    <Database className="w-4 h-4 mr-1"/> 雲端已連線同步
-                </span>
-                <button onClick={openPrintConfig} className="flex items-center bg-gray-800 text-white px-3 py-1.5 rounded-lg shadow hover:bg-gray-700 transition-colors text-sm font-bold shadow-gray-500/50">
-                    <Printer className="w-4 h-4 mr-2"/> 匯出 A4 視覺報表
+            <div className="flex items-center space-x-3">
+                {/* --- 新增：更新儲存按鈕 --- */}
+                <button onClick={handleForceSync} disabled={isSyncing} className={`flex items-center px-4 py-1.5 rounded-lg shadow-md transition-all text-sm font-bold ${isSyncing ? 'bg-indigo-400 text-white cursor-wait' : 'bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow-lg hover:-translate-y-0.5 shadow-indigo-500/30'}`}>
+                    <RefreshCw className={`w-4 h-4 mr-2 ${isSyncing ? 'animate-spin' : ''}`}/>
+                    {isSyncing ? '儲存同步中...' : '更新儲存'}
                 </button>
-                <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold border border-blue-200 shadow-inner">工</div>
+
+                <span className="flex items-center text-xs text-green-600 font-bold bg-green-50 px-2 py-1 rounded border border-green-100">
+                    <Database className="w-3 h-3 mr-1"/> 雙軌保護中
+                </span>
+                <button onClick={openPrintConfig} className="flex items-center bg-gray-800 text-white px-3 py-1.5 rounded-lg shadow hover:bg-gray-700 transition-colors text-sm font-bold shadow-gray-500/50 ml-1">
+                    <Printer className="w-4 h-4 mr-2"/> 匯出
+                </button>
             </div>
         </header>
 
