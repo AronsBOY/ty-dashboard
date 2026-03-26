@@ -390,8 +390,20 @@ export default function App() {
       return [];
   };
 
-  const [projects, setProjects] = useState(loadLocalData);
-  const [auditLogs, setAuditLogs] = useState(loadLocalLogs);
+  const [projects, setProjects] = useState(INITIAL_DATA); // 初始強制用預設值，避免水合錯誤
+  const [auditLogs, setAuditLogs] = useState([]);
+
+  // 畫面載入後，才把本機備份蓋上去
+  useEffect(() => {
+    const localProjects = loadLocalData();
+    const localLogs = loadLocalLogs();
+    if (localProjects && localProjects.length > 0) {
+        setProjects(localProjects);
+    }
+    if (localLogs && localLogs.length > 0) {
+        setAuditLogs(localLogs);
+    }
+  }, []);
   const [user, setUser] = useState(null);
   const [isSyncing, setIsSyncing] = useState(false); // 新增：儲存狀態
 
