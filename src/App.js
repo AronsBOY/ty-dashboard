@@ -1,17 +1,29 @@
 /* global __firebase_config, __app_id, __initial_auth_token */
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { LayoutDashboard, Building2, Calendar, Database, Download, Upload, MapPin, Image as ImageIcon, Search, AlertCircle, CheckSquare, Square, Check, MessageCircle, X, Send, FileText, Clock, History, Key, Printer, Settings, Plus, Paperclip, FileOutput, Zap, Lightbulb, Car, Umbrella, Camera } from 'lucide-react';
+import { LayoutDashboard, Building2, Calendar, Database, Download, Upload, MapPin, Image as ImageIcon, Search, CheckSquare, Square, Check, MessageCircle, X, Send, FileText, Clock, History, Key, Printer, Settings, Plus, Paperclip, FileOutput, Zap, Lightbulb, Car, Umbrella, Camera } from 'lucide-react';
 
 // --- 雲端資料庫 (Firebase) 模組載入 ---
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, doc, setDoc, onSnapshot } from 'firebase/firestore';
 
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
+// 加上防呆機制：若在外部環境 (如 Vercel) 缺乏 Config 時，不執行 Firebase 初始化以避免白畫面崩潰
+const firebaseConfigStr = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
+let app = null, auth = null, db = null;
+
+if (firebaseConfigStr) {
+    try {
+        const firebaseConfig = JSON.parse(firebaseConfigStr);
+        if (Object.keys(firebaseConfig).length > 0) {
+            app = initializeApp(firebaseConfig);
+            auth = getAuth(app);
+            db = getFirestore(app);
+        }
+    } catch (error) {
+        console.error("Firebase 初始化失敗:", error);
+    }
+}
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
 // --- 桃園市品牌色系 ---
@@ -393,6 +405,7 @@ export default function App() {
   // Firebase 雲端連線與同步邏輯
   // ==========================================
   useEffect(() => {
+    if (!auth) return; // 防呆：若無 Firebase 實例則跳過，避免崩潰
     const initAuth = async () => {
       if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
         await signInWithCustomToken(auth, __initial_auth_token);
@@ -406,7 +419,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !db) return; // 防呆：若無 Firebase 實例則跳過
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'taoyuan_db', 'main_data');
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
       if (docSnap.exists()) {
@@ -443,15 +456,16 @@ export default function App() {
   // 統一的寫入雲端與紀錄 Audit Log 函數
   const persistData = async (newProjects, actionDesc) => {
     setProjects(newProjects); // Optimistic UI: 畫面立刻反應，不卡頓
-    if (!user) return;
     
     const newLog = {
         time: new Date().toLocaleString('zh-TW', { hour12: false }),
         action: actionDesc,
-        user: user.uid
+        user: user ? user.uid : 'local-user'
     };
     const updatedLogs = [newLog, ...auditLogs].slice(0, 200);
     setAuditLogs(updatedLogs);
+
+    if (!user || !db) return; // 防呆：若無 Firebase 實例則僅保留本機狀態，不寫入雲端
     
     try {
         const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'taoyuan_db', 'main_data');
@@ -466,7 +480,6 @@ export default function App() {
   const [aiMessages, setAiMessages] = useState([{ role: 'ai', content: '長官您好！我是桃園市通學廊道的 AI 戰情特助。我已經讀取了「各行政區的最新統計數據」。\n\n💡 新功能提示：您可以點擊左下角的「迴紋針」上傳參考文件(txt檔)，並使用「產生新聞稿」功能為您草擬發布文稿！' }]);
   const [aiInput, setAiInput] = useState('');
   const [isAILoading, setIsAILoading] = useState(false);
-  const [aiContextText, setAiContextText] = useState(''); 
   const aiFileInputRef = useRef(null);
   const aiChatEndRef = useRef(null);
 
