@@ -8,23 +8,34 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, doc, setDoc, onSnapshot } from 'firebase/firestore';
 
-// 加上防呆機制：若在外部環境 (如 Vercel) 缺乏 Config 時，不執行 Firebase 初始化以避免白畫面崩潰
-const firebaseConfigStr = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
+// --- 專屬雲端金鑰 (Vercel 部署用) ---
+// 解決 Vercel 環境變數遮蔽問題，直接於此注入您的 Firebase 金鑰：
+const CUSTOM_FIREBASE_CONFIG = {
+  apiKey: "AIzaSyAIu-PMdpLC8p89-gJlgRvHp-DIILym7CA",
+  authDomain: "schoolgoodway-43ca7.firebaseapp.com",
+  projectId: "schoolgoodway-43ca7",
+  storageBucket: "schoolgoodway-43ca7.firebasestorage.app",
+  messagingSenderId: "301135709491",
+  appId: "1:301135709491:web:28a34e2dd890447974ea46"
+};
+
 let app = null, auth = null, db = null;
 
-if (firebaseConfigStr) {
-    try {
-        const firebaseConfig = JSON.parse(firebaseConfigStr);
-        if (Object.keys(firebaseConfig).length > 0) {
-            app = initializeApp(firebaseConfig);
-            auth = getAuth(app);
-            db = getFirestore(app);
-        }
-    } catch (error) {
-        console.error("Firebase 初始化失敗:", error);
+try {
+    // 優先使用自訂金鑰 (Vercel 部署環境)，若無則退回使用系統內建變數
+    const finalConfig = CUSTOM_FIREBASE_CONFIG || (typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null);
+    
+    if (finalConfig && Object.keys(finalConfig).length > 0) {
+        app = initializeApp(finalConfig);
+        auth = getAuth(app);
+        db = getFirestore(app);
     }
+} catch (error) {
+    console.error("Firebase 初始化失敗:", error);
 }
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+// 修改 appId 確保資料庫獨立
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'schoolgoodway-db';
 
 // --- 桃園市品牌色系 ---
 const COLORS = {
@@ -50,7 +61,7 @@ const PROJECT_SOURCES = [
   "彭俊豪(議員)", "葉明月(議員)", "謝美英(議員)", "劉曾玉春(議員)", "吳嘉和(議員)", "黃崇真(議員)", "魏筠(議員)",
   "陳萬得(議員)", "莊玉輝(議員)", "黃敬平(議員)", "舒翠玲(議員)", "劉仁照(議員)", "王珮毓(議員)",
   "呂林小鳳(議員)", "呂淑真(議員)", "蔡永芳(議員)", "楊朝偉(議員)", "許家睿(議員)",
-  "徐其萬(議員)", "游吾和(議員)", "涂權吉(議員)", "周玉琴(議員)", "鄭淑方(議員)", "李家興(議員)", 
+  "徐其萬(議員)", "游吾和(議員)", "涂權吉(議員)", "周玉琴(議員)", "周玉琴(議員)", "鄭淑方(議員)", "李家興(議員)", 
   "郭麗華(議員)", "張桂綿(議員)", "劉勝全(議員)", "錢龍(議員)", "林昭賢(議員)", "徐玉樹(議員)", 
   "劉熒隆(議員)", "簡志偉(議員)", "陳治文(議員)", "李柏坊(議員)", "吳進昌(議員)"
 ];
@@ -390,22 +401,11 @@ export default function App() {
       return [];
   };
 
-  const [projects, setProjects] = useState(INITIAL_DATA); // 初始強制用預設值，避免水合錯誤
+  const [projects, setProjects] = useState(INITIAL_DATA); // 初始強制用預設值，避免 Error 418
   const [auditLogs, setAuditLogs] = useState([]);
-
-  // 畫面載入後，才把本機備份蓋上去
-  useEffect(() => {
-    const localProjects = loadLocalData();
-    const localLogs = loadLocalLogs();
-    if (localProjects && localProjects.length > 0) {
-        setProjects(localProjects);
-    }
-    if (localLogs && localLogs.length > 0) {
-        setAuditLogs(localLogs);
-    }
-  }, []);
   const [user, setUser] = useState(null);
   const [isSyncing, setIsSyncing] = useState(false); // 新增：儲存狀態
+  const [cloudError, setCloudError] = useState(''); // 🚀 新增：雲端錯誤狀態捕捉
 
   const [filterDist, setFilterDist] = useState('All');
   const [schoolDistrictFilter, setSchoolDistrictFilter] = useState('All');
@@ -430,25 +430,52 @@ export default function App() {
   });
   
   const [currentDate, setCurrentDate] = useState('');
+  
+  // 畫面載入後，才把本機備份蓋上去 (避免 Error 418)
+  useEffect(() => {
+    const localProjects = loadLocalData();
+    const localLogs = loadLocalLogs();
+    if (localProjects && localProjects.length > 0) {
+        setProjects(localProjects);
+    }
+    if (localLogs && localLogs.length > 0) {
+        setAuditLogs(localLogs);
+    }
+  }, []);
+
   useEffect(() => {
       const today = new Date();
       setCurrentDate(`${today.getFullYear()}年${today.getMonth() + 1}月${today.getDate()}日`);
   }, []);
 
-  // ==========================================
-  // Firebase 雲端連線與同步邏輯
-  // ==========================================
   useEffect(() => {
-    if (!auth) return; // 防呆：若無 Firebase 實例則跳過，避免崩潰
+    if (!auth) {
+        setCloudError('Firebase 未初始化 (金鑰無效)');
+        return; 
+    }
     const initAuth = async () => {
-      if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-        await signInWithCustomToken(auth, __initial_auth_token);
-      } else {
-        await signInAnonymously(auth);
+      try {
+          // 嘗試使用系統 token，若失敗 (因使用自訂金鑰導致 mismatch) 則降級為匿名登入
+          if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+              try {
+                  await signInWithCustomToken(auth, __initial_auth_token);
+              } catch (tokenErr) {
+                  console.warn("Token mismatch, switching to anonymous auth...", tokenErr);
+                  await signInAnonymously(auth);
+              }
+          } else {
+              await signInAnonymously(auth);
+          }
+      } catch (error) {
+          console.error("Firebase 登入失敗:", error);
+          setCloudError('驗證失敗 (請去 Firebase 後台 Authentication 開啟「匿名登入」)');
       }
     };
     initAuth();
-    const unsubscribe = onAuthStateChanged(auth, setUser);
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+        setUser(currentUser);
+        if (currentUser) setCloudError(''); // 登入成功，清除錯誤
+    });
     return () => unsubscribe();
   }, []);
 
@@ -482,7 +509,10 @@ export default function App() {
             logs: [{ time: new Date().toLocaleString('zh-TW', { hour12: false }), action: '建立資料庫架構與初始化資料', user: user.uid }] 
         });
       }
-    }, (error) => console.error("Firestore 同步錯誤:", error));
+    }, (error) => {
+        console.error("Firestore 同步錯誤:", error);
+        setCloudError('資料庫拒絕存取 (請去 Firebase 後台將 Rules 改為 allow read, write: if true;)');
+    });
     
     return () => unsubscribe();
   }, [user]);
@@ -507,13 +537,17 @@ export default function App() {
         console.error("本機備份失敗:", e);
     }
 
-    if (!user || !db) return; // 防呆：若無 Firebase 實例則僅保留本機狀態，不寫入雲端
+    if (!user || !db) {
+        alert(`⚠️ 警告：雲端連線失敗 (${cloudError || '未登入'})！\n目前您修改的資料僅存在您的【本機電腦】中，其他人無法看到。請依照右上方紅字指示修復 Firebase 設定。`);
+        return; 
+    }
     
     try {
         const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'taoyuan_db', 'main_data');
         await setDoc(docRef, { projects: newProjects, logs: updatedLogs }, { merge: true });
     } catch (error) {
         console.error("儲存至雲端失敗:", error);
+        alert("❌ 雲端同步失敗！請檢查 Firebase 權限規則。\n詳細錯誤：" + error.message);
     }
   };
 
@@ -1417,9 +1451,9 @@ export default function App() {
                                         <span className="text-2xl">{getDistrictTheme(promoProject.district).icon}</span>
                                         <span className="font-bold tracking-widest text-sm drop-shadow">{getDistrictTheme(promoProject.district).desc}</span>
                                     </div>
-                                    <h1 className="text-3xl font-black tracking-wider drop-shadow-md">桃園市通學廊道專案成果</h1>
+                                    <h1 className="text-3xl font-black tracking-wider drop-shadow-md text-white">桃園市通學廊道專案成果</h1>
                                 </div>
-                                <div className="bg-white/20 px-4 py-2 rounded-lg backdrop-blur-md border border-white/30 text-right">
+                                <div className="bg-black/20 px-4 py-2 rounded-lg border border-white/30 text-right">
                                     <div className="text-xs text-white/80 font-bold mb-0.5">專案狀態</div>
                                     <div className="font-black text-xl tracking-widest text-yellow-300 drop-shadow">{promoProject.status}</div>
                                 </div>
@@ -1428,7 +1462,7 @@ export default function App() {
                     </div>
 
                     {/* 卡片內容區 */}
-                    <div className="p-8 flex-1 flex flex-col relative z-10 bg-white/90 backdrop-blur-sm">
+                    <div className="p-8 flex-1 flex flex-col relative z-10 bg-white">
                         
                         {/* 學校標題與經費 */}
                         <div className="flex justify-between items-start mb-6 border-b-2 border-gray-100 pb-4">
@@ -1480,19 +1514,19 @@ export default function App() {
                         <div className="mb-6">
                             <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center border-l-4 border-purple-500 pl-3">建設亮點指標</h3>
                             <div className="grid grid-cols-4 gap-4">
-                                <div className={`p-3 rounded-xl border-2 flex flex-col items-center text-center transition-all ${promoProject.features?.pole ? 'border-amber-400 bg-amber-50 shadow-md transform -translate-y-1' : 'border-gray-100 bg-gray-50 opacity-40 grayscale'}`}>
+                                <div className={`p-3 rounded-xl border-2 flex flex-col items-center text-center transition-all ${promoProject.features?.pole ? 'border-amber-400 bg-amber-50' : 'border-gray-100 bg-gray-50 opacity-40 grayscale'}`}>
                                     <div className={`p-3 rounded-full mb-2 ${promoProject.features?.pole ? 'bg-amber-100' : 'bg-gray-200'}`}><Zap className={`w-6 h-6 ${promoProject.features?.pole ? 'text-amber-500' : 'text-gray-400'}`}/></div>
                                     <span className="font-bold text-gray-800 text-sm">電桿地下化</span>
                                 </div>
-                                <div className={`p-3 rounded-xl border-2 flex flex-col items-center text-center transition-all ${promoProject.features?.light ? 'border-yellow-400 bg-yellow-50 shadow-md transform -translate-y-1' : 'border-gray-100 bg-gray-50 opacity-40 grayscale'}`}>
+                                <div className={`p-3 rounded-xl border-2 flex flex-col items-center text-center transition-all ${promoProject.features?.light ? 'border-yellow-400 bg-yellow-50' : 'border-gray-100 bg-gray-50 opacity-40 grayscale'}`}>
                                     <div className={`p-3 rounded-full mb-2 ${promoProject.features?.light ? 'bg-yellow-100' : 'bg-gray-200'}`}><Lightbulb className={`w-6 h-6 ${promoProject.features?.light ? 'text-yellow-500' : 'text-gray-400'}`}/></div>
                                     <span className="font-bold text-gray-800 text-sm">雙色溫路燈</span>
                                 </div>
-                                <div className={`p-3 rounded-xl border-2 flex flex-col items-center text-center transition-all ${promoProject.features?.pickup ? 'border-blue-400 bg-blue-50 shadow-md transform -translate-y-1' : 'border-gray-100 bg-gray-50 opacity-40 grayscale'}`}>
+                                <div className={`p-3 rounded-xl border-2 flex flex-col items-center text-center transition-all ${promoProject.features?.pickup ? 'border-blue-400 bg-blue-50' : 'border-gray-100 bg-gray-50 opacity-40 grayscale'}`}>
                                     <div className={`p-3 rounded-full mb-2 ${promoProject.features?.pickup ? 'bg-blue-100' : 'bg-gray-200'}`}><Car className={`w-6 h-6 ${promoProject.features?.pickup ? 'text-blue-500' : 'text-gray-400'}`}/></div>
                                     <span className="font-bold text-gray-800 text-sm">避車接送區</span>
                                 </div>
-                                <div className={`p-3 rounded-xl border-2 flex flex-col items-center text-center transition-all relative overflow-hidden ${promoProject.features?.shelter ? 'border-emerald-400 bg-emerald-50 shadow-md transform -translate-y-1' : 'border-gray-100 bg-gray-50 opacity-40 grayscale'}`}>
+                                <div className={`p-3 rounded-xl border-2 flex flex-col items-center text-center transition-all relative overflow-hidden ${promoProject.features?.shelter ? 'border-emerald-400 bg-emerald-50' : 'border-gray-100 bg-gray-50 opacity-40 grayscale'}`}>
                                     {promoProject.features?.shelter && promoProject.shelterLength > 0 && <div className="absolute top-0 right-0 bg-emerald-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-bl-lg shadow-sm">長 {promoProject.shelterLength}m</div>}
                                     <div className={`p-3 rounded-full mb-2 ${promoProject.features?.shelter ? 'bg-emerald-100' : 'bg-gray-200'}`}><Umbrella className={`w-6 h-6 ${promoProject.features?.shelter ? 'text-emerald-500' : 'text-gray-400'}`}/></div>
                                     <span className="font-bold text-gray-800 text-sm">連通式雨遮</span>
@@ -1521,17 +1555,98 @@ export default function App() {
                 </div>
             </div>
         )}
-
       </div>
   );
 
   const renderSchedule = () => {
+     const months = Array.from({length: 12}, (_, i) => i + 1);
+     const scheduledProjects = projects.filter(p => p.scheduleMonth);
+     const unscheduledProjects = projects.filter(p => !p.scheduleMonth && p.status !== '已完工' && p.status !== '暫緩' && !p.isExcluded);
+     
+     const targetCount = 120;
+     const actualCompleted = kpis.actualCompleted;
+     const progressPercent = Math.min(100, Math.round((actualCompleted / targetCount) * 100));
+
      return (
-        <div className="bg-white p-6 rounded-xl shadow-sm h-full flex flex-col animate-fade-in pb-20 overflow-y-auto">
-            {renderBlock8Schedule()}
+        <div className="mb-6 print-avoid-break">
+            <h2 className="text-lg font-bold mb-3 border-l-4 pl-2" style={{ borderColor: COLORS.ecoGreen }}>[8] 115年度預計完工看板 (排程進度)</h2>
+            
+            <div className="flex space-x-4 mb-4">
+                <div className="flex-1 bg-white border border-gray-200 rounded-lg p-4 shadow-sm print-border">
+                    <div className="text-sm text-gray-500 font-bold mb-1">本市實際已完工 / 120所達標率</div>
+                    <div className="flex items-end justify-between">
+                        <div className="text-3xl font-black text-green-600">{actualCompleted} <span className="text-lg text-gray-400 font-normal">/ {targetCount} 所</span></div>
+                        <div className="text-sm font-bold text-green-500 bg-green-50 px-2 py-1 rounded">{progressPercent}%</div>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2 mt-3 print-bg-gray-200">
+                        <div className="bg-green-500 h-2 rounded-full print-bg-green-500" style={{ width: `${progressPercent}%` }}></div>
+                    </div>
+                </div>
+                <div className="flex-1 bg-white border border-blue-200 rounded-lg p-4 shadow-sm print-border relative overflow-hidden">
+                    <div className="absolute top-0 left-0 w-full h-1 bg-blue-500"></div>
+                    <div className="text-sm text-blue-600 font-bold mb-1">已排入數量 (今年度預期完工)</div>
+                    <div className="flex items-end justify-between">
+                        <div className="text-3xl font-black text-blue-700">{scheduledProjects.length} <span className="text-lg text-blue-400 font-normal">案</span></div>
+                    </div>
+                    <p className="text-xs text-blue-400 mt-2">已成功分配完工月份之案件</p>
+                </div>
+                <div className="flex-1 bg-white border border-gray-200 rounded-lg p-4 shadow-sm print-border">
+                    <div className="text-sm text-gray-500 font-bold mb-1">未排程數量 (待指定完工月份)</div>
+                    <div className="flex items-end justify-between">
+                        <div className="text-3xl font-black text-teal-600">{unscheduledProjects.length} <span className="text-lg text-gray-400 font-normal">案</span></div>
+                    </div>
+                    <p className="text-xs text-gray-400 mt-2">系統自動扣除已完工、暫緩或已排定月份之案件</p>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4 p-4 border rounded bg-gray-50 print-grid-cols-6">
+                {months.map(month => {
+                    const mProjects = scheduledProjects.filter(p => p.scheduleMonth === String(month));
+                    return (
+                        <div key={month} className="bg-white border rounded-lg shadow-sm flex flex-col print-avoid-break">
+                            <div className="bg-teal-500 p-2 rounded-t-lg text-white font-bold text-center print-bg-teal-500 print-text-white">115年 {month}月完工</div>
+                            <div className="p-2 flex-1 space-y-2 min-h-[120px] bg-white flex flex-col">
+                                <div className="flex-1 space-y-2">
+                                    {mProjects.map(p => (
+                                        <div key={p.id} className="p-2 border border-teal-100 rounded text-sm relative shadow-sm group">
+                                            <div className="font-bold text-teal-800">{p.name}</div><div className="text-xs text-gray-500">{p.district}</div>
+                                            <button className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition print-hide" onClick={() => {
+                                                const updated = projects.map(proj => proj.id === p.id ? { ...proj, scheduleMonth: '' } : proj);
+                                                persistData(updated, `將 ${p.name} 移出 ${month} 月排程`);
+                                            }} title="移出排程">✕</button>
+                                        </div>
+                                    ))}
+                                    {mProjects.length === 0 && <div className="text-xs text-center text-gray-400 mt-4">尚無排定案件</div>}
+                                </div>
+                                <div className="mt-2 border-t pt-2 print-hide">
+                                    <select 
+                                        className="w-full border border-teal-300 rounded bg-teal-50 p-1.5 text-teal-700 font-bold focus:ring-2 focus:ring-teal-500 outline-none shadow-sm cursor-pointer text-xs"
+                                        value=""
+                                        onChange={(e) => {
+                                            if (e.target.value) {
+                                                const targetId = e.target.value;
+                                                const pName = projects.find(p => p.id === targetId)?.name;
+                                                const updated = projects.map(p => p.id === targetId ? { ...p, scheduleMonth: String(month) } : p);
+                                                persistData(updated, `將 ${pName} 排入 ${month} 月完工`);
+                                            }
+                                        }}
+                                    >
+                                        <option value="" disabled>+ 排入完工案件...</option>
+                                        {unscheduledProjects.map(up => (
+                                            <option key={up.id} value={up.id}>
+                                                {up.district} - {up.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    )
+                })}
+            </div>
         </div>
      );
-  }
+  };
 
   const renderSettings = () => (
     <div className="max-w-4xl mx-auto space-y-6 animate-fade-in pb-20">
@@ -1632,9 +1747,12 @@ export default function App() {
                     {isSyncing ? '儲存同步中...' : '更新儲存'}
                 </button>
 
-                <span className="flex items-center text-xs text-green-600 font-bold bg-green-50 px-2 py-1 rounded border border-green-100">
-                    <Database className="w-3 h-3 mr-1"/> 雙軌保護中
+                {/* --- 🚀 強化：動態雲端連線狀態指示器 (系統照妖鏡) --- */}
+                <span className={`flex items-center text-xs font-bold px-3 py-1.5 rounded border shadow-sm ${user && db && !cloudError ? 'text-green-700 bg-green-50 border-green-200' : 'text-red-700 bg-red-50 border-red-200 animate-pulse'}`} title={cloudError || '已成功連線至 Firebase'}>
+                    <Database className="w-3 h-3 mr-1"/> 
+                    {user && db && !cloudError ? '☁️ 雲端已連線 (雙軌保護)' : `❌ 雲端斷線: ${cloudError || '未登入'}`}
                 </span>
+                
                 <button onClick={openPrintConfig} className="flex items-center bg-gray-800 text-white px-3 py-1.5 rounded-lg shadow hover:bg-gray-700 transition-colors text-sm font-bold shadow-gray-500/50 ml-1">
                     <Printer className="w-4 h-4 mr-2"/> 匯出
                 </button>
@@ -1693,206 +1811,62 @@ export default function App() {
       {/* --- A4 報表匯出設定 Modal --- */}
       {isPrintModalOpen && (
          <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[100] animate-fade-in backdrop-blur-sm screen-only">
-             <div className="bg-white rounded-2xl shadow-2xl p-6 w-[600px] border-t-4 border-gray-800">
-                 <h3 className="text-2xl font-bold mb-2 flex items-center text-gray-800"><Printer className="mr-3 w-6 h-6"/> A4 視覺報表匯出設定</h3>
-                 <p className="text-sm text-gray-500 mb-6 pb-4 border-b">請自由勾選您希望在 PDF 中呈現的卡片區塊。系統將自動為您生成 2cm 邊界之 A4 排版。</p>
-                 
-                 <div className="space-y-6 max-h-[50vh] overflow-y-auto pr-4 custom-scrollbar">
-                     <div>
-                         <h4 className="font-bold text-pink-700 mb-2 border-b border-pink-100 pb-1">【戰情儀錶板】</h4>
-                         <label className="flex items-center space-x-2 py-1 cursor-pointer hover:bg-gray-50 rounded px-2"><input type="checkbox" className="w-4 h-4 text-pink-600 rounded border-gray-300 focus:ring-pink-500" checked={printSelection.b1} onChange={e=>setPrintSelection({...printSelection, b1: e.target.checked})} /><span>[1] 錄案與經費概況總覽 (上方六宮格)</span></label>
-                         <label className="flex items-center space-x-2 py-1 cursor-pointer hover:bg-gray-50 rounded px-2"><input type="checkbox" className="w-4 h-4 text-pink-600 rounded border-gray-300 focus:ring-pink-500" checked={printSelection.b1_1} onChange={e=>setPrintSelection({...printSelection, b1_1: e.target.checked})} /><span>[1-1] 實際學校數量統計 (下方歸戶五宮格)</span></label>
-                         <label className="flex items-center space-x-2 py-1 cursor-pointer hover:bg-gray-50 rounded px-2"><input type="checkbox" className="w-4 h-4 text-pink-600 rounded border-gray-300 focus:ring-pink-500" checked={printSelection.b2} onChange={e=>setPrintSelection({...printSelection, b2: e.target.checked})} /><span>[2] 預算來源分析圓餅圖</span></label>
-                         <label className="flex items-center space-x-2 py-1 cursor-pointer hover:bg-gray-50 rounded px-2"><input type="checkbox" className="w-4 h-4 text-pink-600 rounded border-gray-300 focus:ring-pink-500" checked={printSelection.b3} onChange={e=>setPrintSelection({...printSelection, b3: e.target.checked})} /><span>[3] 行政區進度與經費卡片</span></label>
-                     </div>
-                     <div>
-                         <h4 className="font-bold text-blue-700 mb-2 border-b border-blue-100 pb-1">【中央補助案】</h4>
-                         <label className="flex items-center space-x-2 py-1 cursor-pointer hover:bg-gray-50 rounded px-2"><input type="checkbox" className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500" checked={printSelection.b4} onChange={e=>setPrintSelection({...printSelection, b4: e.target.checked})} /><span>[4] 中央補助專案統計概況 (國土署/公路局)</span></label>
-                         <label className="flex items-center space-x-2 py-1 cursor-pointer hover:bg-gray-50 rounded px-2"><input type="checkbox" className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500" checked={printSelection.b5} onChange={e=>setPrintSelection({...printSelection, b5: e.target.checked})} /><span>[5] 中央補助專案列表 (四大亮點指標清單)</span></label>
-                     </div>
-                     <div>
-                         <h4 className="font-bold text-yellow-600 mb-2 border-b border-yellow-100 pb-1">【學校總表】</h4>
-                         <label className="flex items-center space-x-2 py-1 cursor-pointer hover:bg-gray-50 rounded px-2"><input type="checkbox" className="w-4 h-4 text-yellow-500 rounded border-gray-300 focus:ring-yellow-500" checked={printSelection.b6} onChange={e=>setPrintSelection({...printSelection, b6: e.target.checked})} /><span>[6] 學校總表過濾統計卡片</span></label>
-                         <label className="flex items-center space-x-2 py-1 cursor-pointer hover:bg-gray-50 rounded px-2"><input type="checkbox" className="w-4 h-4 text-yellow-500 rounded border-gray-300 focus:ring-yellow-500" checked={printSelection.b7} onChange={e=>setPrintSelection({...printSelection, b7: e.target.checked})} /><span>[7] 學校總表清單明細 (依目前畫面篩選結果)</span></label>
-                     </div>
-                     <div>
-                         <h4 className="font-bold text-green-700 mb-2 border-b border-green-100 pb-1">【115年排程】</h4>
-                         <label className="flex items-center space-x-2 py-1 cursor-pointer hover:bg-gray-50 rounded px-2"><input type="checkbox" className="w-4 h-4 text-green-600 rounded border-gray-300 focus:ring-green-500" checked={printSelection.b8} onChange={e=>setPrintSelection({...printSelection, b8: e.target.checked})} /><span>[8] 115年度預計完工月份看板與名單</span></label>
-                     </div>
-                 </div>
-
-                 <div className="mt-8 pt-4 border-t flex justify-end space-x-4">
-                     <button onClick={()=>setIsPrintModalOpen(false)} className="px-5 py-2 rounded-lg font-bold text-gray-600 hover:bg-gray-100 transition-colors">取消返回</button>
-                     <button 
-                         onClick={() => {
-                             setIsPrintModalOpen(false);
-                             setTimeout(() => window.print(), 300);
-                         }} 
-                         className="px-6 py-2 rounded-lg font-bold text-white bg-gray-900 hover:bg-black shadow-lg transition-transform hover:scale-105 flex items-center"
-                     >
-                         <Printer className="w-4 h-4 mr-2"/> 確認產生 PDF
-                     </button>
-                 </div>
+             <div className="bg-white rounded-2xl shadow-2xl p-6 w-[500px] border-t-4 border-gray-800">
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-xl font-bold flex items-center"><Printer className="mr-2"/> A4 報表匯出設定</h3>
+                    <button onClick={() => setIsPrintModalOpen(false)} className="text-gray-400 hover:text-red-500"><X className="w-6 h-6"/></button>
+                </div>
+                <div className="text-sm text-gray-600 mb-4 bg-gray-50 p-3 rounded">
+                    請勾選您要列印的報表區塊。系統將自動轉化為適合 A4 列印的高對比黑白/彩色列印樣式。
+                </div>
+                <div className="space-y-3 mb-6">
+                    <label className="flex items-center space-x-3 cursor-pointer p-2 hover:bg-gray-50 rounded">
+                        <input type="checkbox" className="w-4 h-4 text-pink-500" checked={printSelection.b1} onChange={e => setPrintSelection({...printSelection, b1: e.target.checked})}/>
+                        <span className="font-bold text-gray-700">[1] 錄案與經費概況總覽</span>
+                    </label>
+                    <label className="flex items-center space-x-3 cursor-pointer p-2 hover:bg-gray-50 rounded">
+                        <input type="checkbox" className="w-4 h-4 text-pink-500" checked={printSelection.b1_1} onChange={e => setPrintSelection({...printSelection, b1_1: e.target.checked})}/>
+                        <span className="font-bold text-gray-700">[1-1] 實際學校數量統計</span>
+                    </label>
+                    <label className="flex items-center space-x-3 cursor-pointer p-2 hover:bg-gray-50 rounded">
+                        <input type="checkbox" className="w-4 h-4 text-pink-500" checked={printSelection.b2} onChange={e => setPrintSelection({...printSelection, b2: e.target.checked})}/>
+                        <span className="font-bold text-gray-700">[2] 預算來源分析 (圓餅圖)</span>
+                    </label>
+                    <label className="flex items-center space-x-3 cursor-pointer p-2 hover:bg-gray-50 rounded">
+                        <input type="checkbox" className="w-4 h-4 text-pink-500" checked={printSelection.b3} onChange={e => setPrintSelection({...printSelection, b3: e.target.checked})}/>
+                        <span className="font-bold text-gray-700">[3] 行政區進度與經費卡片</span>
+                    </label>
+                    <label className="flex items-center space-x-3 cursor-pointer p-2 hover:bg-gray-50 rounded">
+                        <input type="checkbox" className="w-4 h-4 text-pink-500" checked={printSelection.b4} onChange={e => setPrintSelection({...printSelection, b4: e.target.checked})}/>
+                        <span className="font-bold text-gray-700">[4] 中央補助專案統計概況</span>
+                    </label>
+                    <label className="flex items-center space-x-3 cursor-pointer p-2 hover:bg-gray-50 rounded">
+                        <input type="checkbox" className="w-4 h-4 text-pink-500" checked={printSelection.b5} onChange={e => setPrintSelection({...printSelection, b5: e.target.checked})}/>
+                        <span className="font-bold text-gray-700">[5] 中央補助專案列表</span>
+                    </label>
+                    <label className="flex items-center space-x-3 cursor-pointer p-2 hover:bg-gray-50 rounded">
+                        <input type="checkbox" className="w-4 h-4 text-pink-500" checked={printSelection.b6} onChange={e => setPrintSelection({...printSelection, b6: e.target.checked})}/>
+                        <span className="font-bold text-gray-700">[6] 學校總表過濾統計</span>
+                    </label>
+                    <label className="flex items-center space-x-3 cursor-pointer p-2 hover:bg-gray-50 rounded">
+                        <input type="checkbox" className="w-4 h-4 text-pink-500" checked={printSelection.b7} onChange={e => setPrintSelection({...printSelection, b7: e.target.checked})}/>
+                        <span className="font-bold text-gray-700">[7] 學校總表清單明細</span>
+                    </label>
+                    <label className="flex items-center space-x-3 cursor-pointer p-2 hover:bg-gray-50 rounded">
+                        <input type="checkbox" className="w-4 h-4 text-pink-500" checked={printSelection.b8} onChange={e => setPrintSelection({...printSelection, b8: e.target.checked})}/>
+                        <span className="font-bold text-gray-700">[8] 115年度預計完工看板 (排程進度)</span>
+                    </label>
+                </div>
+                <div className="flex justify-end space-x-3">
+                    <button onClick={() => setPrintSelection({ b1: true, b1_1: true, b2: true, b3: true, b4: true, b5: true, b6: true, b7: true, b8: true })} className="px-4 py-2 text-sm font-bold text-blue-600 bg-blue-50 rounded hover:bg-blue-100">全選</button>
+                    <button onClick={() => {
+                        window.print();
+                        setIsPrintModalOpen(false);
+                    }} className="px-6 py-2 bg-gray-800 text-white font-bold rounded shadow-md hover:bg-gray-900 transition-colors flex items-center"><Printer className="w-4 h-4 mr-2"/> 產生 PDF / 列印</button>
+                </div>
              </div>
          </div>
       )}
-    </div>
-
-    {/* ========================================== */}
-    {/* 【列印專用版面區塊】 (包含 A4 報表與 Promo Card 判斷) */}
-    {/* ========================================== */}
-    <div className={`print-only text-black font-sans bg-white print-content-reset ${promoProject ? 'hidden print:block' : ''}`}>
-        
-        {/* 情境 1：列印 A4 戰情報表 */}
-        {!promoProject && (
-            <>
-                <div className="text-center pb-4 mb-6 border-b-2 border-gray-800">
-                    <h1 className="text-3xl font-black tracking-widest text-gray-900 mb-2">桃園市通學廊道戰情報告</h1>
-                    <p className="text-sm text-gray-600 font-bold">資料統計日期：{currentDate}</p>
-                </div>
-
-                {printSelection.b1 && renderBlock1Overview()}
-                {printSelection.b1_1 && renderBlock1ActualStats()}
-                {printSelection.b2 && renderBlock2PieCharts()}
-                {printSelection.b3 && renderBlock3DistrictCards()}
-                {printSelection.b4 && renderBlock4CentralStats()}
-                {printSelection.b5 && renderBlock5CentralTable()}
-                {printSelection.b6 && renderBlock6SchoolStats()}
-                {printSelection.b7 && renderBlock7SchoolTable()}
-                {printSelection.b8 && renderBlock8Schedule()}
-
-                {!Object.values(printSelection).some(Boolean) && (
-                    <div className="text-center text-gray-400 py-20 border-2 border-dashed border-gray-200">
-                        列印畫面未選取區塊。
-                    </div>
-                )}
-                
-                <div className="mt-8 pt-4 border-t text-right text-xs text-gray-400 font-mono">
-                    Generated by Taoyuan Corridor Dashboard System
-                </div>
-            </>
-        )}
-
-        {/* 情境 2：列印單張宣傳圖卡 */}
-        {promoProject && (
-            <div className="w-[850px] mx-auto mt-8 border rounded-2xl overflow-hidden shadow-none print-promo-card relative flex flex-col">
-                {/* 裝飾背景 */}
-                <div className="absolute top-0 right-0 w-64 h-64 bg-white/20 rounded-full blur-3xl opacity-50 -translate-y-1/2 translate-x-1/4 pointer-events-none"></div>
-                <div className="absolute bottom-0 left-0 w-80 h-80 bg-blue-100 rounded-full blur-3xl opacity-30 translate-y-1/3 -translate-x-1/4 pointer-events-none"></div>
-
-                {/* 卡片標頭 (動態套用行政區意象) */}
-                <div className={`bg-gradient-to-r ${getDistrictTheme(promoProject.district).gradient} p-8 text-white relative`}>
-                    <div className="absolute top-0 left-0 w-full h-full bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10"></div>
-                    <div className="relative z-10">
-                        <div className="flex justify-between items-end mb-4">
-                            <div>
-                                <div className="flex items-center space-x-2 mb-2 text-white/90">
-                                    <span className="text-2xl">{getDistrictTheme(promoProject.district).icon}</span>
-                                    <span className="font-bold tracking-widest text-sm drop-shadow">{getDistrictTheme(promoProject.district).desc}</span>
-                                </div>
-                                <h1 className="text-3xl font-black tracking-wider drop-shadow-md text-white">桃園市通學廊道專案成果</h1>
-                            </div>
-                            <div className="bg-black/20 px-4 py-2 rounded-lg border border-white/30 text-right">
-                                <div className="text-xs text-white/80 font-bold mb-0.5">專案狀態</div>
-                                <div className="font-black text-xl tracking-widest text-yellow-300 drop-shadow">{promoProject.status}</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                {/* 卡片內容區 */}
-                <div className="p-8 flex-1 flex flex-col relative z-10 bg-white">
-                    
-                    {/* 學校標題與經費 */}
-                    <div className="flex justify-between items-start mb-6 border-b-2 border-gray-100 pb-4">
-                        <div>
-                            <div className="flex items-center space-x-3 mb-2">
-                                <span className="px-3 py-1 bg-gray-800 text-white rounded font-bold text-sm shadow-sm">{promoProject.district}</span>
-                                <span className="px-3 py-1 bg-gray-100 text-gray-600 rounded font-bold text-sm border shadow-sm">{promoProject.level}</span>
-                                {promoProject.source && promoProject.source.length > 0 && (
-                                    <span className="px-2 py-1 bg-purple-50 text-purple-700 rounded font-bold text-xs border border-purple-100 shadow-sm">來源: {promoProject.source[0]}{promoProject.source.length > 1 ? '...' : ''}</span>
-                                )}
-                            </div>
-                            <h2 className="text-4xl font-black text-gray-800 tracking-tight">{promoProject.name}</h2>
-                        </div>
-                        <div className="text-right">
-                            <p className="text-sm font-bold text-gray-400 mb-1">投入總經費</p>
-                            <p className="text-4xl font-black text-pink-600 font-mono tracking-tighter">
-                                {Number(promoProject.budgetAmount).toLocaleString()} <span className="text-lg font-bold text-gray-500">萬元</span>
-                            </p>
-                        </div>
-                    </div>
-
-                    {/* 雙照片對照區 (16:9 split into 2) */}
-                    <div className="grid grid-cols-2 gap-4 mb-6">
-                        <div className="relative rounded-xl overflow-hidden border border-gray-200 shadow-sm group" style={{ aspectRatio: '4/3' }}>
-                            <div className="absolute top-2 left-2 bg-gray-900/70 text-white px-3 py-1 rounded-full text-xs font-bold z-10 backdrop-blur-sm border border-gray-700">施工前 (Before)</div>
-                            {promoProject.beforeImage ? (
-                                <img src={promoProject.beforeImage} alt="施工前" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
-                            ) : (
-                                <div className="w-full h-full bg-gray-100 flex flex-col items-center justify-center text-gray-400">
-                                    <ImageIcon className="w-10 h-10 mb-2 opacity-30" />
-                                    <span className="text-sm font-bold opacity-50">尚未提供現況照片</span>
-                                </div>
-                            )}
-                        </div>
-                        <div className="relative rounded-xl overflow-hidden border border-emerald-200 shadow-sm group" style={{ aspectRatio: '4/3' }}>
-                            <div className="absolute top-2 left-2 bg-emerald-600/90 text-white px-3 py-1 rounded-full text-xs font-bold z-10 backdrop-blur-sm border border-emerald-500 shadow-md">改善後 (After)</div>
-                            {promoProject.afterImage ? (
-                                <img src={promoProject.afterImage} alt="改善後" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
-                            ) : (
-                                <div className="w-full h-full bg-emerald-50 flex flex-col items-center justify-center text-emerald-600/50">
-                                    <Camera className="w-10 h-10 mb-2 opacity-30" />
-                                    <span className="text-sm font-bold opacity-50">尚未提供完工照片</span>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* 四大亮點指標 */}
-                    <div className="mb-6">
-                        <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center border-l-4 border-purple-500 pl-3">建設亮點指標</h3>
-                        <div className="grid grid-cols-4 gap-4">
-                            <div className={`p-3 rounded-xl border-2 flex flex-col items-center text-center transition-all ${promoProject.features?.pole ? 'border-amber-400 bg-amber-50' : 'border-gray-100 bg-gray-50 opacity-40 grayscale'}`}>
-                                <div className={`p-3 rounded-full mb-2 ${promoProject.features?.pole ? 'bg-amber-100' : 'bg-gray-200'}`}><Zap className={`w-6 h-6 ${promoProject.features?.pole ? 'text-amber-500' : 'text-gray-400'}`}/></div>
-                                <span className="font-bold text-gray-800 text-sm">電桿地下化</span>
-                            </div>
-                            <div className={`p-3 rounded-xl border-2 flex flex-col items-center text-center transition-all ${promoProject.features?.light ? 'border-yellow-400 bg-yellow-50' : 'border-gray-100 bg-gray-50 opacity-40 grayscale'}`}>
-                                <div className={`p-3 rounded-full mb-2 ${promoProject.features?.light ? 'bg-yellow-100' : 'bg-gray-200'}`}><Lightbulb className={`w-6 h-6 ${promoProject.features?.light ? 'text-yellow-500' : 'text-gray-400'}`}/></div>
-                                <span className="font-bold text-gray-800 text-sm">雙色溫路燈</span>
-                            </div>
-                            <div className={`p-3 rounded-xl border-2 flex flex-col items-center text-center transition-all ${promoProject.features?.pickup ? 'border-blue-400 bg-blue-50' : 'border-gray-100 bg-gray-50 opacity-40 grayscale'}`}>
-                                <div className={`p-3 rounded-full mb-2 ${promoProject.features?.pickup ? 'bg-blue-100' : 'bg-gray-200'}`}><Car className={`w-6 h-6 ${promoProject.features?.pickup ? 'text-blue-500' : 'text-gray-400'}`}/></div>
-                                <span className="font-bold text-gray-800 text-sm">避車接送區</span>
-                            </div>
-                            <div className={`p-3 rounded-xl border-2 flex flex-col items-center text-center transition-all relative overflow-hidden ${promoProject.features?.shelter ? 'border-emerald-400 bg-emerald-50' : 'border-gray-100 bg-gray-50 opacity-40 grayscale'}`}>
-                                {promoProject.features?.shelter && promoProject.shelterLength > 0 && <div className="absolute top-0 right-0 bg-emerald-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-bl-lg shadow-sm">長 {promoProject.shelterLength}m</div>}
-                                <div className={`p-3 rounded-full mb-2 ${promoProject.features?.shelter ? 'bg-emerald-100' : 'bg-gray-200'}`}><Umbrella className={`w-6 h-6 ${promoProject.features?.shelter ? 'text-emerald-500' : 'text-gray-400'}`}/></div>
-                                <span className="font-bold text-gray-800 text-sm">連通式雨遮</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* 底部詳細資訊 */}
-                    <div className="grid grid-cols-3 gap-6 pt-5 border-t-2 border-gray-100 mt-auto bg-gray-50/50 -mx-8 -mb-8 p-8 rounded-b-xl">
-                        <div>
-                            <p className="text-xs text-gray-500 font-bold mb-1">補助單位 / 預算來源</p>
-                            <p className="font-bold text-gray-800 text-sm">{promoProject.budgetSource1} {promoProject.budgetSource2 ? `(${promoProject.budgetSource2})` : ''}</p>
-                        </div>
-                        <div>
-                            <p className="text-xs text-gray-500 font-bold mb-1">施工期程</p>
-                            <p className="font-bold text-gray-800 font-mono text-sm tracking-tighter">
-                                {promoProject.startDate || '未定'} ~ {promoProject.endDate || '未定'}
-                            </p>
-                        </div>
-                        <div className="text-right">
-                            <p className="text-xs text-gray-500 font-bold mb-1">執行機關</p>
-                            <p className="font-bold text-gray-800 text-sm">{promoProject.agency}</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        )}
     </div>
 
     {/* ========================================== */}
